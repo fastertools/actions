@@ -55,10 +55,10 @@ runs:
         
         # Validate inputs
         validate_inputs() {
-          local version="${{ inputs.version }}"
-          local install_deps="${{ inputs.install-dependencies }}"
-          local cache_deps="${{ inputs.cache-dependencies }}"
-          local debug_mode="${{ inputs.debug }}"
+          version="${{ inputs.version }}"
+          install_deps="${{ inputs.install-dependencies }}"
+          cache_deps="${{ inputs.cache-dependencies }}"
+          debug_mode="${{ inputs.debug }}"
           
           # Version validation
           if [[ -n "$version" && "$version" != "latest" ]]; then
@@ -69,8 +69,8 @@ runs:
           
           # Boolean validation
           for input_var in "install_deps:$install_deps" "cache_deps:$cache_deps" "debug_mode:$debug_mode"; do
-            local name=${input_var%:*}
-            local value=${input_var#*:}
+            name=${input_var%:*}
+            value=${input_var#*:}
             case "$value" in
               "true"|"false") ;;
               *) error_exit "$name must be 'true' or 'false', got: '$value'" ;;
@@ -227,7 +227,8 @@ runs:
         detect_platform() {
           start_group "🔍 Platform Detection"
           
-          local os_name arch_name
+          os_name=""
+          arch_name=""
           
           # Primary detection from GitHub Actions
           case "${{ runner.os }}" in
@@ -259,7 +260,8 @@ runs:
           
           # Verification with shell commands
           if command -v uname >/dev/null 2>&1; then
-            local shell_os shell_arch
+            shell_os=""
+            shell_arch=""
             shell_os=$(uname -s | tr '[:upper:]' '[:lower:]')
             shell_arch=$(uname -m)
             
@@ -306,7 +308,7 @@ runs:
           fi
           
           log_step "Fetching latest release from GitHub API"
-          local api_response
+          api_response=""
           if ! api_response=$(curl -fsSL --connect-timeout 10 --max-time 30 "https://api.github.com/repos/fastertools/ftl-cli/releases"); then
             error_exit "Failed to fetch releases from GitHub API"
           fi
@@ -449,7 +451,7 @@ runs:
         
         # Verify installation
         if ~/.local/bin/spin --version >/dev/null 2>&1; then
-          local spin_version
+          spin_version=""
           spin_version=$(~/.local/bin/spin --version)
           log_success "Spin installed successfully: $spin_version"
         else
@@ -652,7 +654,7 @@ runs:
         
         # Verify installation
         if ~/.local/bin/wkg --version >/dev/null 2>&1; then
-          local wkg_version
+          wkg_version=""
           wkg_version=$(~/.local/bin/wkg --version)
           log_success "wkg installed successfully: $wkg_version"
         else
@@ -717,7 +719,7 @@ runs:
           error_exit "FTL CLI not found in PATH after installation"
         fi
         
-        local ftl_path
+        ftl_path=""
         ftl_path=$(command -v ftl)
         log_info "FTL CLI found at: $ftl_path"
         
@@ -728,7 +730,7 @@ runs:
         
         # Test basic functionality
         log_step "Testing ftl --version"
-        local version_output
+        version_output=""
         if ! version_output=$(ftl --version 2>&1); then
           error_exit "ftl --version failed: $version_output"
         fi
@@ -744,7 +746,7 @@ runs:
         fi
         
         # Extract version for output
-        local version_number
+        version_number=""
         version_number=$(echo "$version_output" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
         if [[ -n "$version_number" ]]; then
           echo "ftl-version=$version_number" >> "$GITHUB_OUTPUT"
@@ -760,7 +762,7 @@ runs:
           
           # Check Spin
           if command -v spin >/dev/null 2>&1; then
-            local spin_version
+            spin_version=""
             if spin_version=$(spin --version 2>&1); then
               log_success "Spin: $spin_version"
             else
@@ -772,7 +774,7 @@ runs:
           
           # Check wkg
           if command -v wkg >/dev/null 2>&1; then
-            local wkg_version
+            wkg_version=""
             if wkg_version=$(wkg --version 2>&1); then
               log_success "wkg: $wkg_version"
             else
@@ -784,13 +786,13 @@ runs:
           
           # Check Docker (optional, might be pre-installed)
           if command -v docker >/dev/null 2>&1; then
-            local docker_version
+            docker_version=""
             if docker_version=$(docker --version 2>&1); then
               log_success "Docker: $docker_version"
               
               # Check Docker Buildx if Docker is available
               if docker buildx version >/dev/null 2>&1; then
-                local buildx_version
+                buildx_version=""
                 buildx_version=$(docker buildx version 2>&1)
                 log_success "Docker Buildx: $buildx_version"
               else
