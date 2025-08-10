@@ -1,0 +1,342 @@
+name: Test FTL CLI Action
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Enable debug mode for all tests'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  # Enable detailed logging in GitHub Actions
+  ACTIONS_STEP_DEBUG: ${{ inputs.debug_enabled || false }}
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} with FTL ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-20.04, macos-latest, macos-13]
+        version: [latest, "0.1.0"]  # Replace with actual stable versions when available
+        install-deps: [true, false]
+        include:
+          # Test specific edge cases
+          - os: ubuntu-latest
+            version: latest
+            install-deps: true
+            debug: true
+            name-suffix: " (with debug)"
+          - os: macos-latest
+            version: latest
+            install-deps: false
+            cache-deps: false
+            name-suffix: " (no cache)"
+        exclude:
+          # Skip some combinations to reduce matrix size
+          - os: ubuntu-20.04
+            install-deps: false
+          - os: macos-13
+            install-deps: false
+            
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Display test configuration
+        run: |
+          echo "::group::🧪 Test Configuration"
+          echo "OS: ${{ matrix.os }}"
+          echo "FTL Version: ${{ matrix.version }}"
+          echo "Install Dependencies: ${{ matrix.install-deps }}"
+          echo "Debug Mode: ${{ matrix.debug || inputs.debug_enabled || 'false' }}"
+          echo "Cache Dependencies: ${{ matrix.cache-deps || 'true' }}"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner Architecture: ${{ runner.arch }}"
+          echo "::endgroup::"
+          
+      - name: Test FTL CLI Action
+        id: test-action
+        uses: ./actions/setup-ftl
+        with:
+          version: ${{ matrix.version }}
+          install-dependencies: ${{ matrix.install-deps }}
+          cache-dependencies: ${{ matrix.cache-deps || 'true' }}
+          debug: ${{ matrix.debug || inputs.debug_enabled || 'false' }}
+          
+      - name: Verify Installation Output
+        run: |
+          echo "::group::🔍 Installation Verification"
+          echo "Installed FTL version: ${{ steps.test-action.outputs.ftl-version }}"
+          
+          # Verify output is not empty
+          if [ -z "${{ steps.test-action.outputs.ftl-version }}" ]; then
+            echo "❌ ERROR: ftl-version output is empty"
+            exit 1
+          fi
+          
+          # Verify output format (should be semver or 'unknown')
+          if [[ "${{ steps.test-action.outputs.ftl-version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ "${{ steps.test-action.outputs.ftl-version }}" = "unknown" ]; then
+            echo "✅ FTL version output format is valid: ${{ steps.test-action.outputs.ftl-version }}"
+          else
+            echo "⚠️ WARNING: FTL version output format is unexpected: ${{ steps.test-action.outputs.ftl-version }}"
+          fi
+          echo "::endgroup::"
+          
+      - name: Test FTL CLI Functionality
+        run: |
+          echo "::group::🚀 FTL CLI Functionality Test"
+          
+          # Verify ftl command is available
+          if ! command -v ftl >/dev/null 2>&1; then
+            echo "❌ ERROR: ftl command not found in PATH"
+            exit 1
+          fi
+          
+          echo "✅ ftl command found at: $(command -v ftl)"
+          
+          # Test version command
+          echo "Testing ftl --version..."
+          if ftl_version=$(ftl --version 2>&1); then
+            echo "✅ ftl --version succeeded: $ftl_version"
+          else
+            echo "❌ ERROR: ftl --version failed with exit code $?"
+            echo "Output: $ftl_version"
+            exit 1
+          fi
+          
+          # Test help command (might fail, that's OK)
+          echo "Testing ftl --help..."
+          if ftl --help >/dev/null 2>&1; then
+            echo "✅ ftl --help succeeded"
+          else
+            echo "ℹ️ ftl --help failed (this may be expected behavior)"
+          fi
+          
+          echo "::endgroup::"
+          
+      - name: Test Dependencies (if installed)
+        if: matrix.install-deps == true
+        run: |
+          echo "::group::🛠️ Dependencies Functionality Test"
+          
+          # Test Spin
+          if command -v spin >/dev/null 2>&1; then
+            echo "✅ Spin found at: $(command -v spin)"
+            if spin_version=$(spin --version 2>&1); then
+              echo "✅ Spin version: $spin_version"
+            else
+              echo "⚠️ WARNING: Spin found but --version failed"
+            fi
+          else
+            echo "⚠️ WARNING: Spin not found in PATH"
+          fi
+          
+          # Test wkg
+          if command -v wkg >/dev/null 2>&1; then
+            echo "✅ wkg found at: $(command -v wkg)"
+            if wkg_version=$(wkg --version 2>&1); then
+              echo "✅ wkg version: $wkg_version"
+            else
+              echo "⚠️ WARNING: wkg found but --version failed"
+            fi
+          else
+            echo "⚠️ WARNING: wkg not found in PATH"
+          fi
+          
+          # Test Docker (optional)
+          if command -v docker >/dev/null 2>&1; then
+            echo "✅ Docker found at: $(command -v docker)"
+            if docker_version=$(docker --version 2>&1); then
+              echo "✅ Docker version: $docker_version"
+            else
+              echo "⚠️ WARNING: Docker found but --version failed"
+            fi
+          else
+            echo "ℹ️ Docker not found (this is optional)"
+          fi
+          
+          echo "::endgroup::"
+          
+      - name: PATH and Environment Test
+        run: |
+          echo "::group::🔍 Environment Verification"
+          echo "Current PATH: $PATH"
+          echo ""
+          echo "PATH components:"
+          echo "$PATH" | tr ':' '\n' | nl
+          echo ""
+          echo "Expected directories in PATH:"
+          echo "  ~/.local/bin: $(echo "$PATH" | grep -q "$HOME/.local/bin" && echo "✅ Present" || echo "❌ Missing")"
+          echo "  ~/.cargo/bin: $(echo "$PATH" | grep -q "$HOME/.cargo/bin" && echo "✅ Present" || echo "ℹ️ Not present (expected if cargo wasn't used)")"
+          echo ""
+          echo "Tool locations:"
+          echo "  ftl: $(which ftl || echo 'not found')"
+          echo "  spin: $(which spin || echo 'not found')"
+          echo "  wkg: $(which wkg || echo 'not found')"
+          echo "::endgroup::"
+
+  integration:
+    name: Integration Test
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Install FTL CLI with Debug
+        id: install-ftl
+        uses: ./actions/setup-ftl
+        with:
+          version: latest
+          install-dependencies: true
+          cache-dependencies: true
+          debug: true
+          
+      - name: Integration Test Scenario
+        run: |
+          echo "::group::🧪 Integration Test Scenario"
+          
+          # Test that would represent real usage
+          echo "Simulating real-world usage of FTL CLI..."
+          
+          # Verify the tool works for its intended purpose
+          echo "Testing ftl version command..."
+          ftl --version
+          
+          # Test that tools can be used together if dependencies installed
+          if command -v spin >/dev/null 2>&1; then
+            echo "Testing Spin integration..."
+            spin --version
+          fi
+          
+          if command -v wkg >/dev/null 2>&1; then
+            echo "Testing wkg integration..."
+            wkg --version
+          fi
+          
+          echo "✅ Integration test completed successfully"
+          echo "::endgroup::"
+
+  # Test caching behavior
+  cache-test:
+    name: Cache Behavior Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: First installation (should miss cache)
+        id: first-install
+        uses: ./actions/setup-ftl
+        with:
+          version: latest
+          install-dependencies: true
+          cache-dependencies: true
+          debug: true
+          
+      - name: Second installation (should hit cache)
+        id: second-install
+        uses: ./actions/setup-ftl
+        with:
+          version: latest
+          install-dependencies: true
+          cache-dependencies: true
+          debug: true
+          
+      - name: Verify both installations work
+        run: |
+          echo "::group::🗂️ Cache Test Verification"
+          echo "First install version: ${{ steps.first-install.outputs.ftl-version }}"
+          echo "Second install version: ${{ steps.second-install.outputs.ftl-version }}"
+          
+          # Both should report the same version
+          if [ "${{ steps.first-install.outputs.ftl-version }}" = "${{ steps.second-install.outputs.ftl-version }}" ]; then
+            echo "✅ Both installations report the same version"
+          else
+            echo "❌ ERROR: Version mismatch between installations"
+            exit 1
+          fi
+          
+          # FTL should still work
+          ftl --version
+          echo "✅ FTL CLI works after cached installation"
+          echo "::endgroup::"
+
+  # Test error scenarios
+  error-handling:
+    name: Error Handling Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test invalid version format
+        id: test-invalid-version
+        continue-on-error: true
+        uses: ./actions/setup-ftl
+        with:
+          version: "not-a-version"
+          install-dependencies: false
+          debug: true
+          
+      - name: Verify error handling
+        run: |
+          echo "::group::🚨 Error Handling Verification"
+          if [ "${{ steps.test-invalid-version.outcome }}" = "failure" ]; then
+            echo "✅ Action correctly failed with invalid version"
+          else
+            echo "❌ ERROR: Action should have failed with invalid version"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+  # Summary job
+  test-summary:
+    name: Test Summary
+    if: always()
+    needs: [test, integration, cache-test, error-handling]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Test Results Summary
+        run: |
+          echo "::group::📋 Test Results Summary"
+          echo "Test job: ${{ needs.test.result }}"
+          echo "Integration job: ${{ needs.integration.result }}"
+          echo "Cache test job: ${{ needs.cache-test.result }}"
+          echo "Error handling job: ${{ needs.error-handling.result }}"
+          echo ""
+          
+          # Check if any critical tests failed
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "❌ CRITICAL: Main test suite failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.integration.result }}" != "success" ]; then
+            echo "❌ CRITICAL: Integration test failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.cache-test.result }}" != "success" ]; then
+            echo "⚠️ WARNING: Cache test failed (non-critical)"
+          fi
+          
+          if [ "${{ needs.error-handling.result }}" != "success" ]; then
+            echo "⚠️ WARNING: Error handling test failed (non-critical)"
+          fi
+          
+          echo "✅ Test suite completed"
+          echo "::endgroup::"

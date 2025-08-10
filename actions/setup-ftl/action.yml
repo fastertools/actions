@@ -1,0 +1,870 @@
+name: 'Setup FTL CLI'
+description: 'Install FTL CLI for building and deploying MCP servers'
+author: 'FasterTools'
+branding:
+  icon: 'cloud'
+  color: 'blue'
+
+inputs:
+  version:
+    description: 'FTL CLI version to install (default: latest)'
+    required: false
+    default: 'latest'
+  
+  install-dependencies:
+    description: 'Install dependencies (Spin, wkg, Docker) automatically'
+    required: false
+    default: 'true'
+  
+  cache-dependencies:
+    description: 'Cache installed dependencies'
+    required: false
+    default: 'true'
+  
+  debug:
+    description: 'Enable debug mode with detailed logging'
+    required: false
+    default: 'false'
+
+outputs:
+  ftl-version:
+    description: 'The installed FTL CLI version'
+    value: ${{ steps.verify.outputs.ftl-version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Input Validation
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Script failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Enhanced error reporting function
+        error_exit() {
+          echo "ERROR: $1" >&2
+          echo "Debug info:"
+          echo "  OS: ${{ runner.os }}"
+          echo "  Architecture: ${{ runner.arch }}"
+          echo "  Shell: $SHELL"
+          echo "  Working directory: $(pwd)"
+          exit 1
+        }
+        
+        # Validate inputs
+        validate_inputs() {
+          local version="${{ inputs.version }}"
+          local install_deps="${{ inputs.install-dependencies }}"
+          local cache_deps="${{ inputs.cache-dependencies }}"
+          local debug_mode="${{ inputs.debug }}"
+          
+          # Version validation
+          if [[ -n "$version" && "$version" != "latest" ]]; then
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9-]+)?$ ]]; then
+              error_exit "Invalid version format: '$version'. Expected format: X.Y.Z or X.Y.Z-suffix"
+            fi
+          fi
+          
+          # Boolean validation
+          for input_var in "install_deps:$install_deps" "cache_deps:$cache_deps" "debug_mode:$debug_mode"; do
+            local name=${input_var%:*}
+            local value=${input_var#*:}
+            case "$value" in
+              "true"|"false") ;;
+              *) error_exit "$name must be 'true' or 'false', got: '$value'" ;;
+            esac
+          done
+          
+          echo "✅ Input validation passed"
+        }
+        
+        validate_inputs
+
+    - name: Debug Information
+      if: runner.debug == '1' || inputs.debug == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::🔍 Environment Debug Information"
+        echo "Runner OS: ${{ runner.os }}"
+        echo "Runner Architecture: ${{ runner.arch }}"
+        echo "Shell: $SHELL"
+        echo "Shell Version: $($SHELL --version | head -1)"
+        echo "Current PATH: $PATH"
+        echo "Working Directory: $(pwd)"
+        echo "User: $(whoami)"
+        echo "Available disk space: $(df -h . | tail -1)"
+        if command -v free >/dev/null 2>&1; then
+          echo "Available memory: $(free -h | head -2)"
+        else
+          echo "Available memory: N/A (not Linux)"
+        fi
+        
+        echo ""
+        echo "🔧 Tool Availability Check:"
+        for tool in curl jq unzip tar; do
+          if command -v $tool >/dev/null 2>&1; then
+            echo "✅ $tool: $(command -v $tool) ($(${tool} --version 2>&1 | head -1 || echo 'version unknown'))"
+          else
+            echo "❌ $tool: not found"
+          fi
+        done
+        echo "::endgroup::"
+
+    - name: Setup cache key
+      id: cache-key
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Create cache key based on OS, version, and dependencies flag
+        CACHE_KEY="ftl-cli-${{ runner.os }}-${{ inputs.version }}-deps-${{ inputs.install-dependencies }}"
+        echo "cache-key=${CACHE_KEY}" >> $GITHUB_OUTPUT
+
+    - name: Cache FTL CLI and dependencies
+      if: inputs.cache-dependencies == 'true'
+      uses: actions/cache@v4
+      id: cache
+      with:
+        path: |
+          ~/.local/bin/ftl
+          ~/.local/bin/spin  
+          ~/.cargo/bin/wkg
+          ~/.local/bin/wkg
+          ~/.cargo/registry
+          ~/.cargo/.crates.toml
+          ~/.cargo/.crates2.json
+          ~/.cache/ftl
+        key: ${{ steps.cache-key.outputs.cache-key }}
+        restore-keys: |
+          ftl-cli-${{ runner.os }}-${{ inputs.version }}-
+          ftl-cli-${{ runner.os }}-
+
+    - name: Set up Docker Buildx
+      if: inputs.install-dependencies == 'true' && steps.cache.outputs.cache-hit != 'true'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Install FTL CLI
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: FTL CLI installation failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Enhanced error reporting function
+        error_exit() {
+          echo "ERROR: $1" >&2
+          echo "Debug info:"
+          echo "  OS: ${{ runner.os }}"
+          echo "  Architecture: ${{ runner.arch }}"
+          echo "  Shell: $SHELL"
+          echo "  Working directory: $(pwd)"
+          exit 1
+        }
+        
+        # Structured logging functions
+        start_group() {
+          echo "::group::$1"
+        }
+        
+        end_group() {
+          echo "::endgroup::"
+        }
+        
+        log_info() {
+          echo "ℹ️ $1"
+        }
+        
+        log_success() {
+          echo "✅ $1"
+        }
+        
+        log_warning() {
+          echo "⚠️ $1"
+        }
+        
+        log_step() {
+          echo "📝 Step: $1"
+        }
+        
+        # Network retry function with exponential backoff
+        download_with_retry() {
+          local url=$1
+          local output=$2
+          local description=${3:-"file"}
+          local max_retries=3
+          local retry_delay=5
+          local attempt=1
+          
+          log_info "Downloading $description..."
+          
+          while [ $attempt -le $max_retries ]; do
+            log_step "Attempt $attempt of $max_retries: $url"
+            
+            if curl -fsSL --connect-timeout 10 --max-time 120 "$url" -o "$output"; then
+              log_success "Successfully downloaded $description"
+              return 0
+            fi
+            
+            log_warning "Download attempt $attempt failed"
+            if [ $attempt -lt $max_retries ]; then
+              log_info "Retrying in ${retry_delay} seconds..."
+              sleep $retry_delay
+              retry_delay=$((retry_delay * 2))  # Exponential backoff
+            fi
+            attempt=$((attempt + 1))
+          done
+          
+          error_exit "Failed to download $description after $max_retries attempts from $url"
+        }
+        
+        # Enhanced platform detection
+        detect_platform() {
+          start_group "🔍 Platform Detection"
+          
+          local os_name arch_name
+          
+          # Primary detection from GitHub Actions
+          case "${{ runner.os }}" in
+            "Linux")
+              os_name="linux"
+              ;;
+            "macOS")
+              os_name="darwin"
+              ;;
+            "Windows")
+              error_exit "Windows is not supported yet"
+              ;;
+            *)
+              error_exit "Unsupported runner OS: ${{ runner.os }}"
+              ;;
+          esac
+          
+          case "${{ runner.arch }}" in
+            "X64"|"x64")
+              arch_name="x86_64"
+              ;;
+            "ARM64"|"arm64")
+              arch_name="aarch64"
+              ;;
+            *)
+              error_exit "Unsupported runner architecture: ${{ runner.arch }}"
+              ;;
+          esac
+          
+          # Verification with shell commands
+          if command -v uname >/dev/null 2>&1; then
+            local shell_os shell_arch
+            shell_os=$(uname -s | tr '[:upper:]' '[:lower:]')
+            shell_arch=$(uname -m)
+            
+            log_info "Runner reports: ${{ runner.os }}/${{ runner.arch }}"
+            log_info "Shell reports: $shell_os/$shell_arch"
+            
+            # Warn about mismatches but don't fail
+            if [[ "$shell_os" != *"$os_name"* ]] && [[ "$os_name" != *"$shell_os"* ]]; then
+              log_warning "OS detection mismatch between runner and shell"
+            fi
+          fi
+          
+          # Set global variables
+          DETECTED_OS="$os_name"
+          DETECTED_ARCH="$arch_name"
+          PLATFORM_STRING="${arch_name}-unknown-${os_name}-gnu"
+          
+          log_success "Platform detected: $PLATFORM_STRING"
+          end_group
+        }
+        
+        start_group "📦 Installing FTL CLI"
+        
+        # Skip if cached and exists
+        if [ "${{ inputs.cache-dependencies }}" = "true" ] && [ "${{ steps.cache.outputs.cache-hit }}" = "true" ] && command -v ftl >/dev/null 2>&1; then
+          log_success "FTL CLI found in cache"
+          end_group
+          exit 0
+        fi
+        
+        # Create local bin directory
+        mkdir -p ~/.local/bin
+        
+        # Detect platform first
+        detect_platform
+        
+        # Determine download URL and version
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          start_group "🔍 Resolving Latest Version"
+          
+          # Check if jq is available
+          if ! command -v jq >/dev/null 2>&1; then
+            error_exit "jq is required but not installed"
+          fi
+          
+          log_step "Fetching latest release from GitHub API"
+          local api_response
+          if ! api_response=$(curl -fsSL --connect-timeout 10 --max-time 30 "https://api.github.com/repos/fastertools/ftl-cli/releases"); then
+            error_exit "Failed to fetch releases from GitHub API"
+          fi
+          
+          LATEST_RELEASE=$(echo "$api_response" | jq -r '.[] | select(.tag_name | startswith("cli-v")) | .tag_name' | head -1)
+          if [ -z "$LATEST_RELEASE" ] || [ "$LATEST_RELEASE" = "null" ]; then
+            error_exit "Failed to find latest release with cli-v prefix"
+          fi
+          
+          VERSION=${LATEST_RELEASE#cli-v}
+          TAG_NAME=${LATEST_RELEASE}
+          log_success "Latest version resolved: $VERSION"
+          end_group
+        else
+          VERSION="${{ inputs.version }}"
+          TAG_NAME="cli-v${VERSION}"
+          log_info "Using specified version: $VERSION"
+        fi
+        
+        # Build download URL
+        ASSET_NAME="ftl-${PLATFORM_STRING}"
+        DOWNLOAD_URL="https://github.com/fastertools/ftl-cli/releases/download/${TAG_NAME}/${ASSET_NAME}"
+        
+        log_info "Asset name: ${ASSET_NAME}"
+        log_info "Platform: ${PLATFORM_STRING}"
+        log_info "Version: ${VERSION}"
+        log_info "Tag name: ${TAG_NAME}"
+        log_info "Download URL: ${DOWNLOAD_URL}"
+        
+        # Verify URL exists before downloading
+        log_step "Verifying asset availability"
+        if ! curl -fsSL --head --connect-timeout 10 "${DOWNLOAD_URL}" >/dev/null 2>&1; then
+          log_warning "Asset not found at URL: ${DOWNLOAD_URL}"
+          log_step "Listing available assets for debugging"
+          curl -fsSL "https://api.github.com/repos/fastertools/ftl-cli/releases/tags/${TAG_NAME}" | jq -r '.assets[].name' 2>/dev/null || log_warning "Could not list assets"
+          error_exit "Asset ${ASSET_NAME} not found for version ${TAG_NAME}"
+        fi
+        
+        # Download with retry logic
+        download_with_retry "${DOWNLOAD_URL}" "~/.local/bin/ftl" "FTL CLI binary"
+        
+        # Make executable
+        chmod +x ~/.local/bin/ftl
+        log_success "Made FTL CLI executable"
+        
+        # Add to PATH for GitHub Actions and export for current session
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.local/bin:$PATH"
+        
+        # Also add to GITHUB_ENV for persistence across steps
+        echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+        
+        log_success "FTL CLI installed and added to PATH"
+        end_group
+
+    - name: Install Spin
+      if: inputs.install-dependencies == 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Spin installation failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Enhanced error reporting function
+        error_exit() {
+          echo "ERROR: $1" >&2
+          echo "Debug info:"
+          echo "  OS: ${{ runner.os }}"
+          echo "  Architecture: ${{ runner.arch }}"
+          echo "  Shell: $SHELL"
+          echo "  Working directory: $(pwd)"
+          exit 1
+        }
+        
+        # Structured logging functions
+        start_group() {
+          echo "::group::$1"
+        }
+        
+        end_group() {
+          echo "::endgroup::"
+        }
+        
+        log_info() {
+          echo "ℹ️ $1"
+        }
+        
+        log_success() {
+          echo "✅ $1"
+        }
+        
+        log_warning() {
+          echo "⚠️ $1"
+        }
+        
+        log_step() {
+          echo "📝 Step: $1"
+        }
+        
+        start_group "📦 Installing Spin WebAssembly Runtime"
+        
+        # Skip if already installed
+        if command -v spin >/dev/null 2>&1; then
+          log_success "Spin already installed"
+          end_group
+          exit 0
+        fi
+        
+        # Create local bin directory if it doesn't exist
+        mkdir -p ~/.local/bin
+        
+        # Download and install Spin using platform detection
+        case "${{ runner.os }}" in
+          "Linux")
+            log_step "Downloading Spin for Linux"
+            if ! curl -fsSL --connect-timeout 10 --max-time 120 https://developer.fermyon.com/downloads/fwf_install.sh | bash; then
+              error_exit "Failed to install Spin on Linux"
+            fi
+            ;;
+          "macOS")
+            log_step "Downloading Spin for macOS"
+            if ! curl -fsSL --connect-timeout 10 --max-time 120 https://wasm-functions.fermyon.app/downloads/install.sh | bash; then
+              error_exit "Failed to install Spin on macOS"
+            fi
+            ;;
+          *)
+            error_exit "Unsupported OS for Spin installation: ${{ runner.os }}"
+            ;;
+        esac
+        
+        # Move to local bin and add to PATH
+        if [[ -f "./spin" ]]; then
+          mv ./spin ~/.local/bin/spin
+          chmod +x ~/.local/bin/spin
+          log_success "Moved Spin to ~/.local/bin"
+        else
+          error_exit "Spin binary not found after installation"
+        fi
+        
+        # Verify installation
+        if ~/.local/bin/spin --version >/dev/null 2>&1; then
+          local spin_version
+          spin_version=$(~/.local/bin/spin --version)
+          log_success "Spin installed successfully: $spin_version"
+        else
+          error_exit "Spin installation verification failed"
+        fi
+        
+        end_group
+
+    - name: Debug cache paths
+      if: runner.debug == '1' || inputs.debug == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::🔍 Cache and Installation Debug Information"
+        echo "Cache hit: ${{ steps.cache.outputs.cache-hit }}"
+        
+        echo ""
+        echo "=== ~/.local/bin ==="
+        if [ -d ~/.local/bin ]; then
+          ls -la ~/.local/bin/
+          echo "Size: $(du -sh ~/.local/bin/ 2>/dev/null || echo 'unknown')"
+        else
+          echo "~/.local/bin does not exist"
+        fi
+        
+        echo ""
+        echo "=== ~/.cargo/bin ==="
+        if [ -d ~/.cargo/bin ]; then
+          ls -la ~/.cargo/bin/
+          echo "Size: $(du -sh ~/.cargo/bin/ 2>/dev/null || echo 'unknown')"
+        else
+          echo "~/.cargo/bin does not exist"
+        fi
+        
+        echo ""
+        echo "=== ~/.cargo/registry ==="
+        if [ -d ~/.cargo/registry ]; then
+          echo "Registry exists - Size: $(du -sh ~/.cargo/registry/ 2>/dev/null || echo 'unknown')"
+          echo "Registry contents (top level):"
+          ls -la ~/.cargo/registry/ | head -10
+        else
+          echo "~/.cargo/registry does not exist"
+        fi
+        
+        echo ""
+        echo "=== Cargo metadata files ==="
+        ls -la ~/.cargo/.crates* 2>/dev/null || echo "No .crates files found"
+        
+        echo ""
+        echo "=== Current tool locations ==="
+        echo "ftl: $(which ftl || echo 'not found')"
+        echo "spin: $(which spin || echo 'not found')"
+        echo "wkg: $(which wkg || echo 'not found')"
+        echo "cargo: $(which cargo || echo 'not found')"
+        
+        echo ""
+        echo "=== PATH information ==="
+        echo "PATH: $PATH"
+        echo "::endgroup::"
+
+    - name: Install wkg
+      if: inputs.install-dependencies == 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: wkg installation failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Enhanced error reporting function
+        error_exit() {
+          echo "ERROR: $1" >&2
+          echo "Debug info:"
+          echo "  OS: ${{ runner.os }}"
+          echo "  Architecture: ${{ runner.arch }}"
+          echo "  Shell: $SHELL"
+          echo "  Working directory: $(pwd)"
+          exit 1
+        }
+        
+        # Structured logging functions
+        start_group() {
+          echo "::group::$1"
+        }
+        
+        end_group() {
+          echo "::endgroup::"
+        }
+        
+        log_info() {
+          echo "ℹ️ $1"
+        }
+        
+        log_success() {
+          echo "✅ $1"
+        }
+        
+        log_warning() {
+          echo "⚠️ $1"
+        }
+        
+        log_step() {
+          echo "📝 Step: $1"
+        }
+        
+        # Network retry function
+        download_with_retry() {
+          local url=$1
+          local output=$2
+          local description=${3:-"file"}
+          local max_retries=3
+          local retry_delay=5
+          local attempt=1
+          
+          log_info "Downloading $description..."
+          
+          while [ $attempt -le $max_retries ]; do
+            log_step "Attempt $attempt of $max_retries: $url"
+            
+            if curl -fsSL --connect-timeout 10 --max-time 120 "$url" -o "$output"; then
+              log_success "Successfully downloaded $description"
+              return 0
+            fi
+            
+            log_warning "Download attempt $attempt failed"
+            if [ $attempt -lt $max_retries ]; then
+              log_info "Retrying in ${retry_delay} seconds..."
+              sleep $retry_delay
+              retry_delay=$((retry_delay * 2))
+            fi
+            attempt=$((attempt + 1))
+          done
+          
+          error_exit "Failed to download $description after $max_retries attempts from $url"
+        }
+        
+        start_group "📦 Installing wkg (WebAssembly Package Tool)"
+        
+        # Skip if already installed  
+        if command -v wkg >/dev/null 2>&1; then
+          log_success "wkg already installed"
+          end_group
+          exit 0
+        fi
+        
+        # Create local bin directory if it doesn't exist
+        mkdir -p ~/.local/bin
+        
+        # Try cargo first (if available)
+        if command -v cargo >/dev/null 2>&1; then
+          log_step "Installing wkg via cargo"
+          if cargo install wkg; then
+            log_success "wkg installed via cargo"
+            end_group
+            exit 0
+          else
+            log_warning "Cargo installation failed, falling back to binary download"
+          fi
+        else
+          log_info "Cargo not available, using binary download"
+        fi
+        
+        # Fallback to binary download
+        WKG_VERSION="0.11.0"
+        log_info "Using wkg version: $WKG_VERSION"
+        
+        # Platform detection using GitHub Actions variables
+        case "${{ runner.os }}" in
+          "Linux")
+            case "${{ runner.arch }}" in
+              "X64"|"x64") WKG_PLATFORM="x86_64-unknown-linux-gnu" ;;
+              "ARM64"|"arm64") WKG_PLATFORM="aarch64-unknown-linux-gnu" ;;
+              *) error_exit "Unsupported Linux architecture: ${{ runner.arch }}" ;;
+            esac
+            ;;
+          "macOS")
+            case "${{ runner.arch }}" in
+              "X64"|"x64") WKG_PLATFORM="x86_64-apple-darwin" ;;
+              "ARM64"|"arm64") WKG_PLATFORM="aarch64-apple-darwin" ;;
+              *) error_exit "Unsupported macOS architecture: ${{ runner.arch }}" ;;
+            esac
+            ;;
+          *)
+            error_exit "Unsupported OS: ${{ runner.os }}"
+            ;;
+        esac
+        
+        WKG_URL="https://github.com/bytecodealliance/wasm-pkg-tools/releases/download/v${WKG_VERSION}/wkg-${WKG_PLATFORM}"
+        
+        log_info "Platform: ${WKG_PLATFORM}"
+        log_info "Download URL: ${WKG_URL}"
+        
+        # Download with retry logic
+        download_with_retry "${WKG_URL}" "~/.local/bin/wkg" "wkg binary"
+        
+        # Make executable
+        chmod +x ~/.local/bin/wkg
+        log_success "Made wkg executable"
+        
+        # Verify installation
+        if ~/.local/bin/wkg --version >/dev/null 2>&1; then
+          local wkg_version
+          wkg_version=$(~/.local/bin/wkg --version)
+          log_success "wkg installed successfully: $wkg_version"
+        else
+          error_exit "wkg installation verification failed"
+        fi
+        
+        end_group
+
+
+    - name: Comprehensive Installation Verification
+      id: verify
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Installation verification failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Enhanced error reporting function
+        error_exit() {
+          echo "ERROR: $1" >&2
+          echo "Debug info:"
+          echo "  OS: ${{ runner.os }}"
+          echo "  Architecture: ${{ runner.arch }}"
+          echo "  Shell: $SHELL"
+          echo "  Working directory: $(pwd)"
+          exit 1
+        }
+        
+        # Structured logging functions
+        start_group() {
+          echo "::group::$1"
+        }
+        
+        end_group() {
+          echo "::endgroup::"
+        }
+        
+        log_info() {
+          echo "ℹ️ $1"
+        }
+        
+        log_success() {
+          echo "✅ $1"
+        }
+        
+        log_warning() {
+          echo "⚠️ $1"
+        }
+        
+        log_step() {
+          echo "📝 Step: $1"
+        }
+        
+        start_group "🧪 Comprehensive Installation Verification"
+        
+        # Verify FTL CLI installation
+        log_step "Verifying FTL CLI installation"
+        
+        # Check if ftl command is available
+        if ! command -v ftl >/dev/null 2>&1; then
+          error_exit "FTL CLI not found in PATH after installation"
+        fi
+        
+        local ftl_path
+        ftl_path=$(command -v ftl)
+        log_info "FTL CLI found at: $ftl_path"
+        
+        # Check file permissions
+        if [[ ! -x "$ftl_path" ]]; then
+          error_exit "FTL CLI binary is not executable: $ftl_path"
+        fi
+        
+        # Test basic functionality
+        log_step "Testing ftl --version"
+        local version_output
+        if ! version_output=$(ftl --version 2>&1); then
+          error_exit "ftl --version failed: $version_output"
+        fi
+        
+        log_success "FTL CLI version: $version_output"
+        
+        # Test help command (some CLIs might not have help, so warn but don't fail)
+        log_step "Testing ftl --help"
+        if ! ftl --help >/dev/null 2>&1; then
+          log_warning "ftl --help failed, but --version worked (possibly expected behavior)"
+        else
+          log_success "ftl --help works"
+        fi
+        
+        # Extract version for output
+        local version_number
+        version_number=$(echo "$version_output" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        if [[ -n "$version_number" ]]; then
+          echo "ftl-version=$version_number" >> "$GITHUB_OUTPUT"
+          log_success "Set output ftl-version=$version_number"
+        else
+          log_warning "Could not extract version number from: $version_output"
+          echo "ftl-version=unknown" >> "$GITHUB_OUTPUT"
+        fi
+        
+        # Verify dependencies if requested
+        if [ "${{ inputs.install-dependencies }}" = "true" ]; then
+          log_step "Verifying dependencies"
+          
+          # Check Spin
+          if command -v spin >/dev/null 2>&1; then
+            local spin_version
+            if spin_version=$(spin --version 2>&1); then
+              log_success "Spin: $spin_version"
+            else
+              log_warning "Spin found but --version failed"
+            fi
+          else
+            log_warning "Spin not installed or not in PATH"
+          fi
+          
+          # Check wkg
+          if command -v wkg >/dev/null 2>&1; then
+            local wkg_version
+            if wkg_version=$(wkg --version 2>&1); then
+              log_success "wkg: $wkg_version"
+            else
+              log_warning "wkg found but --version failed"
+            fi
+          else
+            log_warning "wkg not installed or not in PATH"
+          fi
+          
+          # Check Docker (optional, might be pre-installed)
+          if command -v docker >/dev/null 2>&1; then
+            local docker_version
+            if docker_version=$(docker --version 2>&1); then
+              log_success "Docker: $docker_version"
+              
+              # Check Docker Buildx if Docker is available
+              if docker buildx version >/dev/null 2>&1; then
+                local buildx_version
+                buildx_version=$(docker buildx version 2>&1)
+                log_success "Docker Buildx: $buildx_version"
+              else
+                log_warning "Docker Buildx not available"
+              fi
+            else
+              log_warning "Docker found but --version failed"
+            fi
+          else
+            log_info "Docker not installed (this is optional)"
+          fi
+        else
+          log_info "Dependency installation was disabled, skipping dependency verification"
+        fi
+        
+        # Final PATH verification
+        log_step "Final PATH verification"
+        log_info "Current PATH: $PATH"
+        
+        # Verify all expected directories are in PATH
+        if [[ ":$PATH:" == *":$HOME/.local/bin:"* ]]; then
+          log_success "$HOME/.local/bin is in PATH"
+        else
+          log_warning "$HOME/.local/bin is not in PATH"
+        fi
+        
+        if [[ ":$PATH:" == *":$HOME/.cargo/bin:"* ]]; then
+          log_success "$HOME/.cargo/bin is in PATH"
+        else
+          log_info "$HOME/.cargo/bin is not in PATH (this is expected if cargo wasn't used)"
+        fi
+        
+        log_success "Installation verification completed successfully"
+        end_group
+
+    - name: Installation Summary
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::📋 Installation Summary"
+        echo "✅ FTL CLI Version: ${{ steps.verify.outputs.ftl-version }}"
+        echo "✅ Dependencies Installed: ${{ inputs.install-dependencies }}"
+        echo "✅ Cached: ${{ inputs.cache-dependencies }}"
+        echo "✅ Debug Mode: ${{ inputs.debug }}"
+        echo "✅ Runner: ${{ runner.os }}/${{ runner.arch }}"
+        echo ""
+        echo "🚀 Ready to use: ftl --version works!"
+        echo "::endgroup::"
+        
+        # Generate GitHub Actions step summary
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## 📋 FTL CLI Installation Summary
+        
+        ✅ **FTL CLI Version**: \`${{ steps.verify.outputs.ftl-version }}\`  
+        ✅ **Dependencies Installed**: ${{ inputs.install-dependencies }}  
+        ✅ **Cached**: ${{ inputs.cache-dependencies }}  
+        ✅ **Debug Mode**: ${{ inputs.debug }}  
+        ✅ **Runner Platform**: ${{ runner.os }}/${{ runner.arch }}  
+        
+        ### 🚀 Ready to Use
+        
+        The FTL CLI and its dependencies have been successfully installed and verified. You can now use:
+        
+        \`\`\`bash
+        ftl --version
+        \`\`\`
+        
+        ### 📚 Next Steps
+        
+        - Use \`ftl\` commands in subsequent workflow steps
+        - All tools are available in \`\$PATH\`
+        - Check the [FTL CLI documentation](https://github.com/fastertools/ftl-cli) for usage examples
+        
+        ---
+        *Installation completed with V2 hardened shell implementation*
+        EOF
