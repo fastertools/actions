@@ -66,7 +66,3 @@ Each action in this monorepo follows independent versioning:
 
 - 📋 [Issues](https://github.com/fastertools/actions/issues) - Report bugs or request features
 - 💬 [Discussions](https://github.com/fastertools/actions/discussions) - Community support
-
----
-
-*This monorepo implements production-ready GitHub Actions with comprehensive error handling and cross-platform support.*

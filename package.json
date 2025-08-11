@@ -1,0 +1,38 @@
+{
+  "name": "@fastertools/actions",
+  "version": "2.0.0-alpha.1",
+  "description": "TypeScript GitHub Actions for FTL development workflows",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "test": "jest",
+    "lint": "eslint packages/*/src/**/*.ts",
+    "typecheck": "tsc --noEmit --project tsconfig.base.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TBD54566975/ftl"
+  },
+  "keywords": [
+    "github-actions",
+    "ftl",
+    "typescript"
+  ],
+  "author": "TBD",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vercel/ncc": "^0.38.0",
+    "eslint": "^8.45.0",
+    "jest": "^29.6.0",
+    "ts-jest": "^29.1.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.1.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ]
+}

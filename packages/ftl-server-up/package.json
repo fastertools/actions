@@ -1,0 +1,19 @@
+{
+  "name": "@fastertools/ftl-server-up",
+  "version": "2.0.0-alpha.1",
+  "description": "GitHub Action to start FTL server with health checks",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/main.ts -o dist",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/exec": "^1.1.1",
+    "@fastertools/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.0",
+    "typescript": "^5.1.0"
+  }
+}
