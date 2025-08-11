@@ -1,0 +1,141 @@
+name: 'Stop FTL Server'
+description: 'Gracefully stop a running FTL server (optional - server stops automatically at job end)'
+author: 'FasterTools'
+branding:
+  icon: 'stop-circle'
+  color: 'red'
+
+inputs:
+  server-pid:
+    description: 'Process ID of the FTL server to stop (from start-ftl-server output)'
+    required: false
+    default: ''
+  
+  graceful-timeout:
+    description: 'Seconds to wait for graceful shutdown before force kill'
+    required: false
+    default: '10'
+    
+  cleanup-logs:
+    description: 'Remove server log files after stopping'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Stop FTL Server
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::🛑 Stopping FTL Server"
+        
+        # Get server PID
+        SERVER_PID="${{ inputs.server-pid }}"
+        
+        # If no PID provided, try to find it from saved file
+        if [[ -z "$SERVER_PID" ]]; then
+          if [[ -f "$HOME/ftl-server.pid" ]]; then
+            SERVER_PID=$(cat "$HOME/ftl-server.pid")
+            echo "ℹ️ Found server PID from file: $SERVER_PID"
+          else
+            echo "⚠️ No server PID provided and no PID file found"
+            echo "ℹ️ Attempting to find FTL server process..."
+            
+            # Try to find ftl process
+            if FTL_PIDS=$(pgrep -f "ftl up" 2>/dev/null); then
+              SERVER_PID=$(echo "$FTL_PIDS" | head -1)
+              echo "ℹ️ Found FTL server process: $SERVER_PID"
+            else
+              echo "✅ No FTL server process found - may already be stopped"
+              exit 0
+            fi
+          fi
+        fi
+        
+        # Validate PID
+        if ! [[ "$SERVER_PID" =~ ^[0-9]+$ ]]; then
+          echo "ERROR: Invalid PID: $SERVER_PID" >&2
+          exit 1
+        fi
+        
+        echo "ℹ️ Stopping FTL server with PID: $SERVER_PID"
+        
+        # Check if process exists
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+          echo "✅ Server process not running (PID $SERVER_PID not found)"
+          exit 0
+        fi
+        
+        # Get process info for logging
+        PROCESS_INFO=$(ps -p "$SERVER_PID" -o pid,ppid,cmd 2>/dev/null || echo "Process info unavailable")
+        echo "ℹ️ Process info: $PROCESS_INFO"
+        
+        # Attempt graceful shutdown (SIGTERM)
+        echo "📝 Step: Sending SIGTERM for graceful shutdown"
+        if kill -TERM "$SERVER_PID" 2>/dev/null; then
+          echo "✅ SIGTERM sent successfully"
+        else
+          echo "⚠️ Failed to send SIGTERM (process may already be gone)"
+          exit 0
+        fi
+        
+        # Wait for graceful shutdown
+        TIMEOUT="${{ inputs.graceful-timeout }}"
+        echo "⏳ Waiting up to ${TIMEOUT}s for graceful shutdown..."
+        
+        for i in $(seq 1 "$TIMEOUT"); do
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "✅ Server stopped gracefully after ${i}s"
+            break
+          fi
+          sleep 1
+          
+          if [[ $i -eq "$TIMEOUT" ]]; then
+            echo "⚠️ Graceful shutdown timeout reached, sending SIGKILL"
+            if kill -KILL "$SERVER_PID" 2>/dev/null; then
+              echo "✅ Server force-killed with SIGKILL"
+              sleep 1  # Brief wait for cleanup
+            else
+              echo "⚠️ SIGKILL failed (process may already be gone)"
+            fi
+          fi
+        done
+        
+        # Final verification
+        if kill -0 "$SERVER_PID" 2>/dev/null; then
+          echo "ERROR: Server process still running after stop attempts" >&2
+          exit 1
+        else
+          echo "✅ Server stopped successfully"
+        fi
+        
+        # Cleanup PID file
+        rm -f "$HOME/ftl-server.pid"
+        echo "✅ Cleaned up PID file"
+        
+        # Optional log cleanup
+        if [[ "${{ inputs.cleanup-logs }}" == "true" ]]; then
+          if [[ -f "$HOME/ftl-server.log" ]]; then
+            echo "🧹 Removing server log file"
+            rm -f "$HOME/ftl-server.log"
+          fi
+        else
+          echo "ℹ️ Server logs preserved at: ~/ftl-server.log"
+        fi
+        
+        echo "::endgroup::"
+        
+        # Generate summary
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## 🛑 FTL Server Stopped
+        
+        ✅ **Server Process**: Stopped (PID: $SERVER_PID)  
+        ✅ **Shutdown Method**: $( [[ $i -lt $TIMEOUT ]] && echo "Graceful (SIGTERM)" || echo "Forced (SIGKILL)" )  
+        ✅ **Cleanup**: PID file removed  
+        $( [[ "${{ inputs.cleanup-logs }}" == "true" ]] && echo "✅ **Logs**: Cleaned up" || echo "ℹ️ **Logs**: Preserved at ~/ftl-server.log" )
+        
+        ---
+        *Note: Server would have stopped automatically when workflow ends*
+        EOF

@@ -209,10 +209,52 @@ The action includes comprehensive error handling:
 - No built-in support for HTTPS (use reverse proxy if needed)
 - Health check assumes standard HTTP endpoints
 
+## Server Lifecycle Management
+
+### Automatic Cleanup (Recommended)
+
+GitHub Actions automatically stops all processes when jobs end:
+
+```yaml
+- name: Start FTL Server
+  uses: fastertools/actions/actions/start-ftl-server@v1
+
+- name: Run Tests
+  run: npm test
+
+# Server automatically stops here when job ends ✅
+```
+
+### Manual Shutdown (Optional)
+
+For advanced workflows that need explicit control:
+
+```yaml
+- name: Start FTL Server
+  id: ftl-server
+  uses: fastertools/actions/actions/start-ftl-server@v1
+
+- name: Run Tests
+  run: npm test
+
+- name: Stop FTL Server
+  if: always()  # Always run, even if tests fail
+  uses: fastertools/actions/actions/stop-ftl-server@v1
+  with:
+    server-pid: ${{ steps.ftl-server.outputs.server-pid }}
+```
+
+### When to Use Manual Shutdown
+
+- **Resource cleanup**: When you want explicit resource cleanup
+- **Log management**: When you need to process logs before job ends
+- **Multi-stage workflows**: When starting/stopping servers multiple times
+- **Debugging**: When you need to verify shutdown behavior
+
 ## Related Actions
 
 - [`setup-ftl`](../setup-ftl/) - Install FTL CLI and dependencies
-- [`stop-ftl-server`](../stop-ftl-server/) - Gracefully stop FTL server (planned)
+- [`stop-ftl-server`](../stop-ftl-server/) - Optional graceful server shutdown
 
 ## Troubleshooting
 

@@ -334,6 +334,8 @@ runs:
         echo "  • View logs: cat ~/ftl-server.log"
         echo "  • Check process: ps -p $SERVER_PID"
         echo "  • Stop server: kill $SERVER_PID"
+        echo ""
+        echo "💡 Note: Server will automatically stop when workflow ends"
         
         echo "::endgroup::"
         
