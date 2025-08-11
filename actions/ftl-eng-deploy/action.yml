@@ -305,7 +305,7 @@ runs:
           # Asynchronous deployment (fire and forget)
           echo "ℹ️ Starting deployment in background (not waiting for completion)"
           
-          if $FTL_CMD > "$DEPLOY_LOG" 2>&1 &; then
+          if $FTL_CMD > "$DEPLOY_LOG" 2>&1 & then
             DEPLOY_PID=$!
             echo "✅ Deployment started with PID: $DEPLOY_PID"
             deployment_status="started"
