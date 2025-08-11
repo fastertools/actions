@@ -28,6 +28,56 @@ Install the FTL CLI and its dependencies with production-grade reliability.
 
 [📚 Full Documentation →](actions/setup-ftl/README.md)
 
+### 🚀 [Start FTL Server](actions/start-ftl-server/)
+
+Start the FTL server in background with health checks and process management.
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/actions/start-ftl-server@v1
+  with:
+    port: 8080
+    build: true
+```
+
+[📚 Full Documentation →](actions/start-ftl-server/README.md)
+
+### 🛑 [Stop FTL Server](actions/stop-ftl-server/)
+
+Gracefully stop a running FTL server (optional - server stops automatically at job end).
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/actions/stop-ftl-server@v1
+  with:
+    server-pid: ${{ steps.start.outputs.server-pid }}
+```
+
+[📚 Full Documentation →](actions/stop-ftl-server/README.md)
+
+### 🚢 [FTL Engineering Deploy](actions/ftl-eng-deploy/)
+
+Deploy FTL applications to engineering environments with OAuth2 authentication.
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/actions/ftl-eng-deploy@v1
+  env:
+    FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_M2M_APP_CLIENT_ID }}
+    FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_M2M_APP_CLIENT_SECRET }}
+  with:
+    environment: staging
+```
+
+**Features:**
+- ✅ OAuth2 M2M authentication  
+- ✅ Multi-environment support  
+- ✅ Deployment tracking  
+- ✅ Configurable timeouts  
+- ✅ Async deployment option  
+
+[📚 Full Documentation →](actions/ftl-eng-deploy/README.md)
+
 ## Repository Structure
 
 ```
@@ -35,10 +85,19 @@ Install the FTL CLI and its dependencies with production-grade reliability.
 │   └── workflows/
 │       └── test.yml          # Test all actions
 ├── actions/
-│   └── setup-ftl/            # FTL CLI installer action
+│   ├── setup-ftl/            # FTL CLI installer action
+│   │   ├── action.yml        # Action definition
+│   │   ├── README.md         # Action documentation
+│   │   └── CHANGELOG.md      # Action changelog
+│   ├── start-ftl-server/     # Server lifecycle management
+│   │   ├── action.yml        # Action definition
+│   │   └── README.md         # Action documentation
+│   ├── stop-ftl-server/      # Server shutdown action
+│   │   ├── action.yml        # Action definition
+│   │   └── README.md         # Action documentation
+│   └── ftl-eng-deploy/       # Engineering deployment action
 │       ├── action.yml        # Action definition
-│       ├── README.md         # Action documentation
-│       └── CHANGELOG.md      # Action changelog
+│       └── README.md         # Action documentation
 ├── CHANGELOG.md              # Monorepo changelog
 ├── LICENSE                   # MIT License
 └── README.md                 # This file - action portal

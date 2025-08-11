@@ -1,0 +1,389 @@
+name: 'FTL Engineering Deploy'
+description: 'Deploy FTL applications to engineering environment with OAuth authentication'
+author: 'FasterTools'
+branding:
+  icon: 'upload-cloud'
+  color: 'purple'
+
+inputs:
+  oauth-url:
+    description: 'OAuth token endpoint URL'
+    required: false
+    default: 'https://divine-lion-50-staging.authkit.app/oauth2/token'
+  
+  scope:
+    description: 'OAuth scope for the token request'
+    required: false
+    default: 'FTL GitHub Deploy Action'
+  
+  deployment-url:
+    description: 'FTL deployment endpoint URL'
+    required: false
+    default: ''
+  
+  project-path:
+    description: 'Path to FTL project (default: current directory)'
+    required: false
+    default: '.'
+  
+  wait-for-deployment:
+    description: 'Wait for deployment to complete'
+    required: false
+    default: 'true'
+  
+  deployment-timeout:
+    description: 'Maximum time to wait for deployment (seconds)'
+    required: false
+    default: '300'
+  
+  debug:
+    description: 'Enable debug mode with detailed logging'
+    required: false
+    default: 'false'
+
+outputs:
+  deployment-id:
+    description: 'The deployment ID from the FTL engineering deploy'
+    value: ${{ steps.deploy.outputs.deployment-id }}
+  
+  deployment-url:
+    description: 'URL of the deployed application'
+    value: ${{ steps.deploy.outputs.deployment-url }}
+  
+  deployment-status:
+    description: 'Final status of the deployment'
+    value: ${{ steps.deploy.outputs.deployment-status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate Environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Environment validation failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        echo "::group::🔍 Validating Environment"
+        
+        # Check required environment variables
+        if [[ -z "${FTL_M2M_APP_CLIENT_ID:-}" ]]; then
+          echo "ERROR: FTL_M2M_APP_CLIENT_ID environment variable is required" >&2
+          echo "Please set it as a secret in your GitHub repository settings" >&2
+          exit 1
+        fi
+        
+        if [[ -z "${FTL_M2M_APP_CLIENT_SECRET:-}" ]]; then
+          echo "ERROR: FTL_M2M_APP_CLIENT_SECRET environment variable is required" >&2
+          echo "Please set it as a secret in your GitHub repository settings" >&2
+          exit 1
+        fi
+        
+        echo "✅ Required environment variables are set"
+        
+        # Validate inputs
+        timeout="${{ inputs.deployment-timeout }}"
+        if ! [[ "$timeout" =~ ^[0-9]+$ ]] || [ "$timeout" -lt 1 ] || [ "$timeout" -gt 3600 ]; then
+          echo "ERROR: deployment-timeout must be a number between 1 and 3600, got: '$timeout'" >&2
+          exit 1
+        fi
+        
+        # Validate boolean inputs
+        for input_var in "wait:${{ inputs.wait-for-deployment }}" "debug:${{ inputs.debug }}"; do
+          name=${input_var%:*}
+          value=${input_var#*:}
+          case "$value" in
+            "true"|"false") ;;
+            *) echo "ERROR: $name must be 'true' or 'false', got: '$value'" >&2; exit 1 ;;
+          esac
+        done
+        
+        echo "✅ Input validation passed"
+        echo "::endgroup::"
+
+    - name: Verify FTL CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::🔧 Verifying FTL CLI"
+        
+        # Check if ftl command is available
+        if ! command -v ftl >/dev/null 2>&1; then
+          echo "ERROR: FTL CLI not found. Please run the 'fastertools/actions/actions/setup-ftl' action first." >&2
+          exit 1
+        fi
+        
+        ftl_version=""
+        if ftl_version=$(ftl --version 2>&1); then
+          echo "✅ FTL CLI found: $ftl_version"
+        else
+          echo "ERROR: FTL CLI found but --version failed: $ftl_version" >&2
+          exit 1
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Obtain OAuth Token
+      id: auth
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: OAuth authentication failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        echo "::group::🔐 Obtaining OAuth Token"
+        
+        # Debug mode
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "🔍 OAuth URL: ${{ inputs.oauth-url }}"
+          echo "🔍 Scope: ${{ inputs.scope }}"
+          echo "🔍 Client ID length: ${#FTL_M2M_APP_CLIENT_ID}"
+        fi
+        
+        # Prepare OAuth request
+        OAUTH_URL="${{ inputs.oauth-url }}"
+        SCOPE="${{ inputs.scope }}"
+        
+        echo "📝 Step: Requesting OAuth token"
+        
+        # Make OAuth token request
+        response=""
+        http_status=""
+        
+        # Build form data
+        form_data="grant_type=client_credentials"
+        form_data="${form_data}&client_id=${FTL_M2M_APP_CLIENT_ID}"
+        form_data="${form_data}&client_secret=${FTL_M2M_APP_CLIENT_SECRET}"
+        form_data="${form_data}&scope=${SCOPE}"
+        
+        # Make the request with curl
+        if response=$(curl -w "HTTP_STATUS:%{http_code}" -s --connect-timeout 10 --max-time 30 \
+             -X POST \
+             -H "Content-Type: application/x-www-form-urlencoded" \
+             -d "$form_data" \
+             "$OAUTH_URL" 2>&1); then
+          
+          # Extract HTTP status and response body
+          http_status=$(echo "$response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          response_body=$(echo "$response" | sed 's/HTTP_STATUS:[0-9]*$//')
+          
+          if [[ "${{ inputs.debug }}" == "true" ]]; then
+            echo "🔍 HTTP Status: $http_status"
+            echo "🔍 Response (first 200 chars): ${response_body:0:200}"
+          fi
+          
+          # Check if we got a successful response
+          if [[ "$http_status" == "200" ]]; then
+            # Extract access token using jq
+            if ! command -v jq >/dev/null 2>&1; then
+              echo "ERROR: jq is required but not installed" >&2
+              exit 1
+            fi
+            
+            access_token=""
+            if access_token=$(echo "$response_body" | jq -r '.access_token // empty'); then
+              if [[ -n "$access_token" ]]; then
+                echo "✅ OAuth token obtained successfully"
+                
+                # Save token for next steps (mask it in logs)
+                echo "::add-mask::$access_token"
+                echo "oauth-token=$access_token" >> "$GITHUB_OUTPUT"
+                
+                # Extract token type if available
+                token_type=$(echo "$response_body" | jq -r '.token_type // "Bearer"')
+                echo "token-type=$token_type" >> "$GITHUB_OUTPUT"
+                
+                # Extract expiry if available
+                expires_in=$(echo "$response_body" | jq -r '.expires_in // "3600"')
+                echo "ℹ️ Token expires in: ${expires_in} seconds"
+              else
+                echo "ERROR: No access_token in OAuth response" >&2
+                echo "Response: $response_body" >&2
+                exit 1
+              fi
+            else
+              echo "ERROR: Failed to parse OAuth response" >&2
+              echo "Response: $response_body" >&2
+              exit 1
+            fi
+          else
+            echo "ERROR: OAuth request failed with status $http_status" >&2
+            echo "Response: $response_body" >&2
+            
+            # Try to extract error details
+            if error_desc=$(echo "$response_body" | jq -r '.error_description // .error // empty' 2>/dev/null); then
+              echo "Error details: $error_desc" >&2
+            fi
+            exit 1
+          fi
+        else
+          echo "ERROR: Failed to make OAuth request to $OAUTH_URL" >&2
+          exit 1
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Deploy with FTL
+      id: deploy
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: FTL deployment failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        echo "::group::🚀 Deploying with FTL"
+        
+        # Change to project directory
+        PROJECT_PATH="${{ inputs.project-path }}"
+        if [[ "$PROJECT_PATH" != "." ]]; then
+          cd "$PROJECT_PATH"
+          echo "ℹ️ Changed to project directory: $(pwd)"
+        else
+          echo "ℹ️ Using current directory: $(pwd)"
+        fi
+        
+        # Verify project structure
+        if [[ -f "ftl.toml" ]]; then
+          echo "✅ Found ftl.toml"
+        else
+          echo "⚠️ No ftl.toml found in: $(pwd)"
+          echo "ℹ️ Directory contents:"
+          ls -la | head -20
+        fi
+        
+        # Get OAuth token from previous step
+        OAUTH_TOKEN="${{ steps.auth.outputs.oauth-token }}"
+        TOKEN_TYPE="${{ steps.auth.outputs.token-type }}"
+        
+        # Build ftl eng deploy command
+        FTL_CMD="ftl eng deploy"
+        
+        # Add deployment URL if specified
+        if [[ -n "${{ inputs.deployment-url }}" ]]; then
+          FTL_CMD="$FTL_CMD --url=${{ inputs.deployment-url }}"
+        fi
+        
+        echo "📝 Deployment command: $FTL_CMD"
+        
+        # Set authorization header for FTL
+        export FTL_AUTH_TOKEN="$OAUTH_TOKEN"
+        export FTL_AUTH_TYPE="$TOKEN_TYPE"
+        
+        # Alternative: Pass token via header if FTL supports it
+        # export FTL_AUTHORIZATION="${TOKEN_TYPE} ${OAUTH_TOKEN}"
+        
+        # Create deployment log file
+        DEPLOY_LOG="$HOME/ftl-deploy.log"
+        
+        # Execute deployment
+        echo "📝 Step: Starting deployment"
+        
+        if [[ "${{ inputs.wait-for-deployment }}" == "true" ]]; then
+          # Synchronous deployment with timeout
+          timeout_seconds="${{ inputs.deployment-timeout }}"
+          
+          if timeout "${timeout_seconds}s" $FTL_CMD 2>&1 | tee "$DEPLOY_LOG"; then
+            echo "✅ Deployment completed successfully"
+            deployment_status="success"
+          else
+            exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+              echo "ERROR: Deployment timed out after ${timeout_seconds} seconds" >&2
+              deployment_status="timeout"
+              exit 1
+            else
+              echo "ERROR: Deployment failed with exit code $exit_code" >&2
+              deployment_status="failed"
+              exit 1
+            fi
+          fi
+        else
+          # Asynchronous deployment (fire and forget)
+          echo "ℹ️ Starting deployment in background (not waiting for completion)"
+          
+          if $FTL_CMD > "$DEPLOY_LOG" 2>&1 &; then
+            DEPLOY_PID=$!
+            echo "✅ Deployment started with PID: $DEPLOY_PID"
+            deployment_status="started"
+            
+            # Wait briefly to check if process starts successfully
+            sleep 3
+            if ! kill -0 "$DEPLOY_PID" 2>/dev/null; then
+              echo "ERROR: Deployment process died immediately" >&2
+              cat "$DEPLOY_LOG"
+              exit 1
+            fi
+          else
+            echo "ERROR: Failed to start deployment" >&2
+            exit 1
+          fi
+        fi
+        
+        # Extract deployment information from logs if available
+        deployment_id=""
+        deployment_url=""
+        
+        if [[ -f "$DEPLOY_LOG" ]]; then
+          # Try to extract deployment ID (adjust patterns based on actual FTL output)
+          if deployment_id=$(grep -oP 'Deployment ID: \K[a-zA-Z0-9-]+' "$DEPLOY_LOG" 2>/dev/null | tail -1); then
+            echo "📝 Deployment ID: $deployment_id"
+            echo "deployment-id=$deployment_id" >> "$GITHUB_OUTPUT"
+          fi
+          
+          # Try to extract deployment URL (adjust patterns based on actual FTL output)
+          if deployment_url=$(grep -oP 'Deployed to: \K[^\s]+' "$DEPLOY_LOG" 2>/dev/null | tail -1); then
+            echo "📝 Deployment URL: $deployment_url"
+            echo "deployment-url=$deployment_url" >> "$GITHUB_OUTPUT"
+          fi
+        fi
+        
+        echo "deployment-status=$deployment_status" >> "$GITHUB_OUTPUT"
+        
+        echo "::endgroup::"
+
+    - name: Deployment Summary
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::📋 Deployment Summary"
+        
+        deployment_status="${{ steps.deploy.outputs.deployment-status }}"
+        deployment_id="${{ steps.deploy.outputs.deployment-id }}"
+        deployment_url="${{ steps.deploy.outputs.deployment-url }}"
+        
+        echo "✅ Deployment Status: $deployment_status"
+        
+        if [[ -n "$deployment_id" ]]; then
+          echo "✅ Deployment ID: $deployment_id"
+        fi
+        
+        if [[ -n "$deployment_url" ]]; then
+          echo "✅ Deployment URL: $deployment_url"
+        fi
+        
+        echo "::endgroup::"
+        
+        # Generate GitHub Actions step summary
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## 🚀 FTL Engineering Deployment
+        
+        ✅ **Status**: ${deployment_status}  
+        ${deployment_id:+✅ **Deployment ID**: \`$deployment_id\`  }
+        ${deployment_url:+✅ **Deployment URL**: [$deployment_url]($deployment_url)  }
+        
+        ### 📝 Configuration
+        
+        - **OAuth URL**: \`${{ inputs.oauth-url }}\`
+        - **Scope**: \`${{ inputs.scope }}\`
+        - **Project Path**: \`${{ inputs.project-path }}\`
+        - **Wait for Completion**: ${{ inputs.wait-for-deployment }}
+        ${deployment_status:+- **Timeout**: ${{ inputs.deployment-timeout }} seconds}
+        
+        ---
+        *Deployed using FTL Engineering Deploy Action*
+        EOF
