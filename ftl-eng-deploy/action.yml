@@ -1,0 +1,45 @@
+name: 'FTL Engineering Deploy (TypeScript)'
+description: 'Deploy FTL applications to engineering environments'
+author: 'FasterTools'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'purple'
+
+inputs:
+  project:
+    description: 'Project name to deploy'
+    required: true
+  environment:
+    description: 'Target environment (staging, production, etc.)'
+    required: true
+  client-id:
+    description: 'OAuth2 client ID for authentication'
+    required: true
+  client-secret:
+    description: 'OAuth2 client secret for authentication'
+    required: true
+  oauth-url:
+    description: 'OAuth2 token endpoint URL'
+    required: false
+    default: 'https://auth.fastertools.com/oauth/token'
+  wait-for-completion:
+    description: 'Wait for deployment to complete'
+    required: false
+    default: 'true'
+  timeout:
+    description: 'Maximum time to wait for deployment (seconds)'
+    required: false
+    default: '300'
+
+outputs:
+  deployment-id:
+    description: 'ID of the deployment'
+  deployment-url:
+    description: 'URL of the deployed application'
+  deployment-status:
+    description: 'Status of the deployment'
+
+runs:
+  using: 'node20'
+  main: '../packages/ftl-eng-deploy/dist/index.js'

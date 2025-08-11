@@ -1,3 +1,17 @@
+export interface OAuthConfig {
+    url: string;
+    clientId: string;
+    clientSecret: string;
+    scope?: string;
+}
+export interface OAuthToken {
+    accessToken: string;
+    tokenType: string;
+    expiresIn: number;
+}
+export declare function obtainOAuthToken(config: OAuthConfig): Promise<OAuthToken>;
+export declare function cacheOAuthToken(token: OAuthToken): void;
+export declare function getCachedOAuthToken(): OAuthToken | null;
 export interface AuthOptions {
     clientId?: string;
     clientSecret?: string;

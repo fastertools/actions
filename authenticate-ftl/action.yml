@@ -1,0 +1,38 @@
+name: 'Authenticate FTL (TypeScript)'
+description: 'Authenticate with FTL using OAuth2 client credentials'
+author: 'FasterTools'
+
+branding:
+  icon: 'lock'
+  color: 'yellow'
+
+inputs:
+  method:
+    description: 'Authentication method (auto, oauth, or api-key)'
+    required: false
+    default: 'auto'
+  oauth-url:
+    description: 'OAuth2 token endpoint URL'
+    required: false
+    default: 'https://auth.fastertools.com/oauth/token'
+  client-id:
+    description: 'OAuth2 client ID (required for oauth method)'
+    required: false
+  client-secret:
+    description: 'OAuth2 client secret (required for oauth method)'
+    required: false
+  api-key:
+    description: 'API key for authentication (required for api-key method)'
+    required: false
+
+outputs:
+  token:
+    description: 'Authentication token'
+  token-type:
+    description: 'Type of token (Bearer, etc.)'
+  expires-in:
+    description: 'Token expiration time in seconds'
+
+runs:
+  using: 'node20'
+  main: '../packages/authenticate-ftl/dist/index.js'

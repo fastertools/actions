@@ -1,33 +1,51 @@
 import * as core from '@actions/core'
-import { FTLAuthClient } from '@fastertools/shared'
+import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken, type OAuthToken } from '@fastertools/shared'
 
 async function run(): Promise<void> {
   try {
-    core.startGroup('🔐 FTL Authentication (TypeScript Skeleton)')
+    core.startGroup('🔐 FTL Authentication')
     
     const method = core.getInput('method') || 'auto'
     const setOutput = core.getBooleanInput('set-output')
+    const clientId = core.getInput('client-id')
+    const clientSecret = core.getInput('client-secret')
     
     core.info(`Authentication method: ${method}`)
     core.info(`Set output: ${setOutput}`)
     
-    // CRAWL Phase: OAuth authentication
-    const client = new FTLAuthClient()
+    let token: OAuthToken
     
-    let token
-    if (method === 'interactive') {
-      core.info('Using interactive device flow (skeleton)')
-      token = await client.authenticate({ interactive: true })
+    // Try to get cached token first
+    const cachedToken = getCachedOAuthToken()
+    if (cachedToken && method === 'auto') {
+      core.info('Using cached authentication token')
+      token = cachedToken
+    } else if (method === 'interactive') {
+      throw new Error('Interactive authentication not yet supported - use client credentials')
     } else {
-      const clientId = core.getInput('client-id')
-      const clientSecret = core.getInput('client-secret')
-      
+      // Client credentials flow
       if (!clientId || !clientSecret) {
         throw new Error('client-id and client-secret are required for non-interactive authentication')
       }
       
-      core.info('Using client credentials flow (skeleton)')
-      token = await client.authenticate({ clientId, clientSecret })
+      core.info('Using client credentials flow')
+      
+      const oauthUrl = process.env.FTL_OAUTH_URL || 'https://api.ftl.dev/oauth/token'
+      
+      try {
+        token = await obtainOAuthToken({
+          url: oauthUrl,
+          clientId,
+          clientSecret,
+          scope: 'deploy'
+        })
+        
+        // Cache the token for future use
+        cacheOAuthToken(token)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        throw new Error(`OAuth authentication failed: ${errorMessage}`)
+      }
     }
     
     // Export token for subsequent actions
@@ -39,7 +57,11 @@ async function run(): Promise<void> {
       core.setOutput('token', token.accessToken)
     }
     
-    core.info('✅ Authentication successful. Token cached for workflow (skeleton).')
+    // Set additional outputs
+    core.setOutput('token-type', token.tokenType)
+    core.setOutput('expires-in', token.expiresIn.toString())
+    
+    core.info('✅ Authentication successful. Token cached for workflow.')
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     core.setFailed(`Authentication failed: ${errorMessage}`)

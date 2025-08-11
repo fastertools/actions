@@ -4,7 +4,72 @@
 
 A collection of production-ready GitHub Actions for the FasterTools ecosystem. Each action is designed with comprehensive error handling, caching, and cross-platform support.
 
-## Available Actions
+## Migration Notice
+
+We're transitioning from Bash to TypeScript implementations. Both versions are available:
+
+| Action | Bash (v1) | TypeScript (v2) |
+|--------|-----------|-----------------|
+| Setup FTL | `fastertools/actions/actions/setup-ftl@v1` | `fastertools/actions/setup-ftl-js@v2` |
+| FTL Server Up | `fastertools/actions/actions/start-ftl-server@v1` | `fastertools/actions/ftl-server-up@v2` |
+| Authenticate FTL | N/A | `fastertools/actions/authenticate-ftl@v2` |
+| FTL Eng Deploy | `fastertools/actions/actions/ftl-eng-deploy@v1` | `fastertools/actions/ftl-eng-deploy@v2` |
+
+## TypeScript Actions (v2)
+
+### 📦 [Setup FTL CLI (TypeScript)](setup-ftl-js/)
+
+Modern TypeScript implementation with enhanced error handling and caching.
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/setup-ftl-js@v2
+  with:
+    version: 'latest'
+    use-cache: true
+    install-dependencies: false
+```
+
+### 🚀 [FTL Server Up](ftl-server-up/)
+
+Start FTL server with health checking and process management.
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/ftl-server-up@v2
+  with:
+    port: 8080
+    timeout: 30
+```
+
+### 🔐 [Authenticate FTL](authenticate-ftl/)
+
+OAuth2 authentication for FTL services.
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/authenticate-ftl@v2
+  with:
+    method: 'oauth'
+    client-id: ${{ secrets.FTL_CLIENT_ID }}
+    client-secret: ${{ secrets.FTL_CLIENT_SECRET }}
+```
+
+### 🚢 [FTL Engineering Deploy](ftl-eng-deploy/)
+
+Deploy applications to FTL engineering environments.
+
+**Quick Usage:**
+```yaml
+- uses: fastertools/actions/ftl-eng-deploy@v2
+  with:
+    project: 'my-project'
+    environment: 'staging'
+    client-id: ${{ secrets.FTL_CLIENT_ID }}
+    client-secret: ${{ secrets.FTL_CLIENT_SECRET }}
+```
+
+## Bash Actions (v1 - Legacy)
 
 ### 📦 [Setup FTL CLI](actions/setup-ftl/)
 
@@ -107,14 +172,17 @@ Deploy FTL applications to engineering environments with OAuth2 authentication.
 
 Actions in this repository follow a unified versioning strategy:
 
-- **Latest Stable**: Use `@v1` to automatically get the latest stable release
-- **Specific Version**: Use `@v1.2.0` to pin to a specific version
-- **Major Version**: Recommended to use `@v1` for non-breaking updates
+- **v1**: Bash implementations (legacy, stable)
+- **v2**: TypeScript implementations (modern, recommended)
+- **Latest Stable**: Use `@v2` for TypeScript or `@v1` for Bash
+- **Specific Version**: Use `@v2.0.0` to pin to a specific version
+- **Major Version**: Recommended to use `@v2` for non-breaking updates
 
 ### Version Tags
 
-- `setup-ftl/v1.0.0` - Initial stable release
-- `setup-ftl/v1` - Major version tag (automatically updated)
+- `@v1` - Bash implementations (legacy)
+- `@v2` - TypeScript implementations (recommended)
+- `@main` - Latest development version (not recommended for production)
 
 ## Usage Examples
 

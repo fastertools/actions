@@ -4,4 +4,5 @@ export interface DownloadOptions {
     timeout?: number;
 }
 export declare function downloadWithRetry(url: string, outputPath: string, options?: DownloadOptions): Promise<void>;
+export declare function checkUrlExists(url: string): Promise<boolean>;
 export declare function healthCheck(url: string, retries?: number): Promise<boolean>;

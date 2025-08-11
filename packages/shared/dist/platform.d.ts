@@ -4,4 +4,5 @@ export interface Platform {
     runner: string;
 }
 export declare function detectPlatform(): Platform;
+export declare function getPlatformDownloadName(platform: Platform): string;
 export declare function getDownloadUrl(version: string, platform: Platform): string;

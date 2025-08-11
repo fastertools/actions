@@ -1,0 +1,37 @@
+name: 'FTL Server Up (TypeScript)'
+description: 'Start FTL server and wait for it to be healthy'
+author: 'FasterTools'
+
+branding:
+  icon: 'server'
+  color: 'green'
+
+inputs:
+  port:
+    description: 'Port to run FTL server on'
+    required: false
+    default: '8080'
+  timeout:
+    description: 'Maximum time to wait for server to be healthy (seconds)'
+    required: false
+    default: '30'
+  build:
+    description: 'Build the project before starting the server'
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Working directory to run the server from'
+    required: false
+    default: '.'
+
+outputs:
+  pid:
+    description: 'Process ID of the FTL server'
+  status:
+    description: 'Status of the FTL server'
+  healthy:
+    description: 'Whether the server is healthy'
+
+runs:
+  using: 'node20'
+  main: '../packages/ftl-server-up/dist/index.js'
