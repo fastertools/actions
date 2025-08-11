@@ -1,0 +1,369 @@
+name: 'Start FTL Server'
+description: 'Start FTL server in background with health checks and process management'
+author: 'FasterTools'
+branding:
+  icon: 'play-circle'
+  color: 'green'
+
+inputs:
+  health-check-timeout:
+    description: 'Maximum time to wait for server health check (seconds)'
+    required: false
+    default: '30'
+  
+  log-level:
+    description: 'Server log level (debug, info, warn, error)'
+    required: false
+    default: 'info'
+    
+  port:
+    description: 'Port for FTL server (default: auto-detect)'
+    required: false
+    default: ''
+  
+  config-file:
+    description: 'Path to FTL configuration file'
+    required: false
+    default: ''
+    
+  background:
+    description: 'Run server in background (true) or foreground (false)'
+    required: false
+    default: 'true'
+
+outputs:
+  server-pid:
+    description: 'Process ID of the running FTL server'
+    value: ${{ steps.start.outputs.server-pid }}
+  
+  server-url:
+    description: 'URL where the FTL server is accessible'
+    value: ${{ steps.start.outputs.server-url }}
+    
+  health-check-url:
+    description: 'Health check endpoint URL'
+    value: ${{ steps.start.outputs.health-check-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Input Validation
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Input validation failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Validate numeric inputs
+        timeout="${{ inputs.health-check-timeout }}"
+        if ! [[ "$timeout" =~ ^[0-9]+$ ]] || [ "$timeout" -lt 1 ] || [ "$timeout" -gt 300 ]; then
+          echo "ERROR: health-check-timeout must be a number between 1 and 300, got: '$timeout'" >&2
+          exit 1
+        fi
+        
+        # Validate port if provided
+        port="${{ inputs.port }}"
+        if [[ -n "$port" ]]; then
+          if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+            echo "ERROR: port must be a number between 1024 and 65535, got: '$port'" >&2
+            exit 1
+          fi
+        fi
+        
+        # Validate log level
+        log_level="${{ inputs.log-level }}"
+        case "$log_level" in
+          "debug"|"info"|"warn"|"error") ;;
+          *) echo "ERROR: log-level must be one of: debug, info, warn, error, got: '$log_level'" >&2; exit 1 ;;
+        esac
+        
+        # Validate boolean
+        background="${{ inputs.background }}"
+        case "$background" in
+          "true"|"false") ;;
+          *) echo "ERROR: background must be 'true' or 'false', got: '$background'" >&2; exit 1 ;;
+        esac
+        
+        echo "✅ Input validation passed"
+
+    - name: Verify FTL CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::🔍 Verifying FTL CLI Installation"
+        
+        # Check if ftl command is available
+        if ! command -v ftl >/dev/null 2>&1; then
+          echo "ERROR: FTL CLI not found. Please run the 'fastertools/actions/actions/setup-ftl' action first." >&2
+          exit 1
+        fi
+        
+        ftl_version=""
+        if ftl_version=$(ftl --version 2>&1); then
+          echo "✅ FTL CLI found: $ftl_version"
+        else
+          echo "ERROR: FTL CLI found but --version failed: $ftl_version" >&2
+          exit 1
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Start FTL Server
+      id: start
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Server start failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        # Structured logging functions
+        start_group() {
+          echo "::group::$1"
+        }
+        
+        end_group() {
+          echo "::endgroup::"
+        }
+        
+        log_info() {
+          echo "ℹ️ $1"
+        }
+        
+        log_success() {
+          echo "✅ $1"
+        }
+        
+        log_warning() {
+          echo "⚠️ $1"
+        }
+        
+        log_step() {
+          echo "📝 Step: $1"
+        }
+        
+        start_group "🚀 Starting FTL Server"
+        
+        # Build ftl up command
+        FTL_CMD="ftl up"
+        
+        # Add log level
+        FTL_CMD="$FTL_CMD --log-level=${{ inputs.log-level }}"
+        
+        # Add port if specified
+        if [[ -n "${{ inputs.port }}" ]]; then
+          FTL_CMD="$FTL_CMD --port=${{ inputs.port }}"
+        fi
+        
+        # Add config file if specified
+        if [[ -n "${{ inputs.config-file }}" ]]; then
+          if [[ ! -f "${{ inputs.config-file }}" ]]; then
+            echo "ERROR: Configuration file not found: ${{ inputs.config-file }}" >&2
+            exit 1
+          fi
+          FTL_CMD="$FTL_CMD --config=${{ inputs.config-file }}"
+        fi
+        
+        log_info "Server command: $FTL_CMD"
+        
+        if [[ "${{ inputs.background }}" == "true" ]]; then
+          # Background mode with process management
+          log_step "Starting server in background"
+          
+          # Create log file for server output
+          SERVER_LOG_FILE="$HOME/ftl-server.log"
+          log_info "Server logs will be written to: $SERVER_LOG_FILE"
+          
+          # Start server in background and capture PID
+          $FTL_CMD > "$SERVER_LOG_FILE" 2>&1 &
+          SERVER_PID=$!
+          
+          log_success "Server started with PID: $SERVER_PID"
+          echo "server-pid=$SERVER_PID" >> "$GITHUB_OUTPUT"
+          
+          # Save PID for potential cleanup
+          echo "$SERVER_PID" > "$HOME/ftl-server.pid"
+          
+          # Wait a moment for server to initialize
+          sleep 2
+          
+          # Check if process is still running
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            log_warning "Server process died immediately, checking logs..."
+            if [[ -f "$SERVER_LOG_FILE" ]]; then
+              echo "::group::🔍 Server Startup Logs"
+              cat "$SERVER_LOG_FILE"
+              echo "::endgroup::"
+            fi
+            echo "ERROR: FTL server failed to start" >&2
+            exit 1
+          fi
+          
+          log_success "Server process is running (PID: $SERVER_PID)"
+          
+        else
+          # Foreground mode (for debugging or simple cases)
+          log_step "Starting server in foreground"
+          log_warning "Server will run in foreground - workflow will wait here"
+          
+          # Note: In foreground mode, the step will not complete until server stops
+          exec $FTL_CMD
+        fi
+        
+        end_group
+
+    - name: Health Check
+      if: inputs.background == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Global error trap
+        trap 'echo "ERROR: Health check failed at line $LINENO. Exit code: $?" >&2' ERR
+        
+        echo "::group::🏥 Server Health Check"
+        
+        SERVER_PID=$(cat "$HOME/ftl-server.pid" 2>/dev/null || echo "")
+        if [[ -z "$SERVER_PID" ]]; then
+          echo "ERROR: Could not find server PID file" >&2
+          exit 1
+        fi
+        
+        # Determine server URL (basic detection)
+        # Note: This is a simplified approach - real implementation would parse ftl output
+        if [[ -n "${{ inputs.port }}" ]]; then
+          SERVER_URL="http://localhost:${{ inputs.port }}"
+        else
+          SERVER_URL="http://localhost:8080"  # FTL default port
+        fi
+        
+        HEALTH_URL="${SERVER_URL}/health"  # Assuming FTL has a health endpoint
+        
+        echo "server-url=$SERVER_URL" >> "$GITHUB_OUTPUT"
+        echo "health-check-url=$HEALTH_URL" >> "$GITHUB_OUTPUT"
+        
+        echo "ℹ️ Server URL: $SERVER_URL"
+        echo "ℹ️ Health check URL: $HEALTH_URL"
+        echo "ℹ️ Health check timeout: ${{ inputs.health-check-timeout }} seconds"
+        
+        # Health check with timeout
+        timeout_seconds="${{ inputs.health-check-timeout }}"
+        attempt=1
+        max_attempts=10
+        sleep_interval=$((timeout_seconds / max_attempts))
+        
+        # Ensure minimum sleep interval
+        if [[ $sleep_interval -lt 1 ]]; then
+          sleep_interval=1
+          max_attempts=$timeout_seconds
+        fi
+        
+        echo "📝 Step: Waiting for server to be ready (max ${timeout_seconds}s, checking every ${sleep_interval}s)"
+        
+        while [[ $attempt -le $max_attempts ]]; do
+          echo "🔍 Health check attempt $attempt of $max_attempts"
+          
+          # Check if process is still running
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "ERROR: Server process died (PID: $SERVER_PID)" >&2
+            if [[ -f "$HOME/ftl-server.log" ]]; then
+              echo "::group::📋 Server Logs"
+              cat "$HOME/ftl-server.log"
+              echo "::endgroup::"
+            fi
+            exit 1
+          fi
+          
+          # Try to connect to server
+          if curl -f -s --connect-timeout 5 --max-time 10 "$HEALTH_URL" >/dev/null 2>&1; then
+            echo "✅ Server health check passed!"
+            echo "✅ Server is ready at: $SERVER_URL"
+            break
+          elif curl -f -s --connect-timeout 5 --max-time 10 "$SERVER_URL" >/dev/null 2>&1; then
+            # Health endpoint might not exist, but server responds
+            echo "✅ Server is responding (health endpoint not available)"
+            echo "✅ Server is ready at: $SERVER_URL"
+            break
+          else
+            if [[ $attempt -eq $max_attempts ]]; then
+              echo "ERROR: Server health check failed after ${timeout_seconds}s" >&2
+              echo "🔍 Server process status: $(ps -p "$SERVER_PID" -o pid,ppid,stat,comm 2>/dev/null || echo 'not found')"
+              if [[ -f "$HOME/ftl-server.log" ]]; then
+                echo "::group::📋 Recent Server Logs"
+                tail -50 "$HOME/ftl-server.log"
+                echo "::endgroup::"
+              fi
+              exit 1
+            fi
+            
+            echo "⏳ Server not ready yet, waiting ${sleep_interval}s..."
+            sleep $sleep_interval
+          fi
+          
+          attempt=$((attempt + 1))
+        done
+        
+        echo "::endgroup::"
+
+    - name: Server Summary
+      if: inputs.background == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::📋 FTL Server Status"
+        
+        SERVER_PID=$(cat "$HOME/ftl-server.pid" 2>/dev/null || echo "unknown")
+        SERVER_URL="${{ steps.start.outputs.server-url }}"
+        
+        echo "✅ FTL Server Status: Running"
+        echo "✅ Process ID: $SERVER_PID"
+        echo "✅ Server URL: $SERVER_URL"
+        echo "✅ Log Level: ${{ inputs.log-level }}"
+        
+        if [[ -n "${{ inputs.port }}" ]]; then
+          echo "✅ Port: ${{ inputs.port }}"
+        else
+          echo "✅ Port: auto-detected"
+        fi
+        
+        echo ""
+        echo "🔧 Server Management:"
+        echo "  • View logs: cat ~/ftl-server.log"
+        echo "  • Check process: ps -p $SERVER_PID"
+        echo "  • Stop server: kill $SERVER_PID"
+        
+        echo "::endgroup::"
+        
+        # Generate GitHub Actions step summary
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## 🚀 FTL Server Started
+        
+        ✅ **Status**: Running in background  
+        ✅ **Process ID**: \`$SERVER_PID\`  
+        ✅ **Server URL**: [\`$SERVER_URL\`]($SERVER_URL)  
+        ✅ **Log Level**: ${{ inputs.log-level }}  
+        
+        ### 🔧 Server Management
+        
+        **View server logs:**
+        \`\`\`bash
+        cat ~/ftl-server.log
+        \`\`\`
+        
+        **Check server status:**
+        \`\`\`bash
+        ps -p $SERVER_PID
+        curl $SERVER_URL/health
+        \`\`\`
+        
+        **Stop server (if needed):**
+        \`\`\`bash
+        kill $SERVER_PID
+        \`\`\`
+        
+        ---
+        *Server will continue running for subsequent workflow steps*
+        EOF
