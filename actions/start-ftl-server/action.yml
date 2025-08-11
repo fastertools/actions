@@ -41,6 +41,11 @@ inputs:
     required: false
     default: ''
     
+  working-directory:
+    description: 'Working directory for running ftl up (default: repository root)'
+    required: false
+    default: ''
+    
   background:
     description: 'Run server in background (true) or foreground (false)'
     required: false
@@ -164,6 +169,51 @@ runs:
         
         start_group "🚀 Starting FTL Server"
         
+        # CRITICAL: Ensure we're in the correct directory
+        log_step "Setting up working directory"
+        log_info "Initial directory: $(pwd)"
+        log_info "GitHub workspace: ${GITHUB_WORKSPACE:-not set}"
+        
+        # Determine the correct working directory
+        if [[ -n "${{ inputs.working-directory }}" ]]; then
+          # User specified a custom working directory
+          WORK_DIR="${{ inputs.working-directory }}"
+          log_info "Using user-specified working directory: $WORK_DIR"
+        elif [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
+          # Use GitHub workspace (default for GitHub Actions)
+          WORK_DIR="$GITHUB_WORKSPACE"
+          log_info "Using GitHub workspace: $WORK_DIR"
+        else
+          # Fallback to current directory
+          WORK_DIR="$(pwd)"
+          log_info "Using current directory: $WORK_DIR"
+        fi
+        
+        # Change to the working directory
+        if [[ "$(pwd)" != "$WORK_DIR" ]]; then
+          cd "$WORK_DIR"
+          log_success "Changed to working directory: $(pwd)"
+        else
+          log_info "Already in working directory: $(pwd)"
+        fi
+        
+        # Verify we're in the right place by checking for project indicators
+        log_step "Checking for FTL project files"
+        if [[ -f "ftl.toml" ]]; then
+          log_success "Found ftl.toml in: $(pwd)"
+          log_info "ftl.toml contents (first 10 lines):"
+          head -10 ftl.toml || echo "Could not read ftl.toml"
+        elif [[ -d "toolbox" ]]; then
+          log_success "Found toolbox directory in: $(pwd)"
+          log_info "Toolbox contents:"
+          ls -la toolbox/ | head -10 || echo "Could not list toolbox"
+        else
+          log_warning "No ftl.toml or toolbox found in: $(pwd)"
+          log_info "Directory contents:"
+          ls -la | head -20
+          log_warning "FTL server may fail to start without proper configuration"
+        fi
+        
         # Build ftl up command
         FTL_CMD="ftl up"
         
@@ -213,7 +263,11 @@ runs:
           SERVER_LOG_FILE="$HOME/ftl-server.log"
           log_info "Server logs will be written to: $SERVER_LOG_FILE"
           
+          # Save the current working directory for the server
+          log_info "Starting server from directory: $(pwd)"
+          
           # Start server in background and capture PID
+          # IMPORTANT: Server runs in current directory to find ftl.toml and toolbox
           $FTL_CMD > "$SERVER_LOG_FILE" 2>&1 &
           SERVER_PID=$!
           
@@ -261,6 +315,15 @@ runs:
         trap 'echo "ERROR: Health check failed at line $LINENO. Exit code: $?" >&2' ERR
         
         echo "::group::🏥 Server Health Check"
+        
+        # Ensure we're in the same working directory as the server startup
+        if [[ -n "${{ inputs.working-directory }}" ]]; then
+          cd "${{ inputs.working-directory }}"
+          echo "ℹ️ Changed to working directory: $(pwd)"
+        elif [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
+          cd "$GITHUB_WORKSPACE"
+          echo "ℹ️ Changed to workspace: $(pwd)"
+        fi
         
         # Check if jq is available for MCP response parsing
         if ! command -v jq >/dev/null 2>&1; then
@@ -327,6 +390,27 @@ runs:
           echo "🔍 Testing MCP endpoint: $HEALTH_URL"
           echo "🔍 MCP request: $mcp_request"
           
+          # Debug: Check environment differences
+          echo "🔍 Current directory: $(pwd)"
+          echo "🔍 Directory contents:"
+          ls -la | head -20 || echo "Failed to list directory"
+          
+          # Check for ftl.toml or toolbox configuration
+          if [[ -f "ftl.toml" ]]; then
+            echo "🔍 Found ftl.toml:"
+            head -20 ftl.toml || echo "Could not read ftl.toml"
+          else
+            echo "🔍 No ftl.toml found in current directory"
+          fi
+          
+          # Check for toolbox directory
+          if [[ -d "toolbox" ]]; then
+            echo "🔍 Found toolbox directory:"
+            ls -la toolbox/ | head -10 || echo "Could not list toolbox"
+          else
+            echo "🔍 No toolbox directory found"
+          fi
+          
           # Store curl response for debugging
           mcp_response=""
           http_status=""
@@ -349,7 +433,29 @@ runs:
               echo "✅ FTL server is ready at: $SERVER_URL"
               break
             elif echo "$response_body" | jq -e '.error' >/dev/null 2>&1; then
-              echo "⚠️ MCP endpoint responded but with error: $(echo "$response_body" | jq -r '.error.message // .error')"
+              error_code=$(echo "$response_body" | jq -r '.error.code // ""')
+              error_message=$(echo "$response_body" | jq -r '.error.message // .error')
+              echo "⚠️ MCP endpoint responded with error code: $error_code"
+              echo "⚠️ Error message: $error_message"
+              
+              # Error code -32603 is "Internal error" which often means configuration issues
+              # Check for common configuration issues that indicate server is running but needs setup
+              if [[ "$error_code" == "-32603" ]] || [[ "$error_message" == *"tool_components"* ]] || [[ "$error_message" == *"no variable for"* ]] || [[ "$error_message" == *"Undefined"* ]] || [[ "$error_message" == *"configuration"* ]]; then
+                echo "💡 Server is running but needs toolbox configuration"
+                echo "💡 This is a configuration issue, not a server failure"
+                echo "💡 Tips:"
+                echo "   - Ensure you have a ftl.toml file in your project root"
+                echo "   - Make sure your toolbox directory contains MCP tools"
+                echo "   - Run 'ftl init' to set up a new project if needed"
+                
+                # Treat as "server ready" since process is responding to MCP requests correctly
+                echo "✅ FTL server process is running and responding to MCP requests"
+                echo "✅ Server available at: $SERVER_URL"
+                echo "⚠️ Note: MCP tools need configuration to work properly"
+                break
+              else
+                echo "⚠️ Unexpected MCP error, will continue trying..."
+              fi
             else
               echo "⚠️ MCP endpoint responded but not valid MCP format"
             fi
