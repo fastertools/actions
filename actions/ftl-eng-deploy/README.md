@@ -51,10 +51,8 @@ To add these secrets:
     FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_M2M_APP_CLIENT_ID }}
     FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_M2M_APP_CLIENT_SECRET }}
   with:
-    environment: production
     oauth-url: https://your-auth-server.com/oauth2/token
     scope: 'deploy:production read:metrics'
-    deployment-url: https://api.production.example.com
     project-path: ./my-ftl-project
     wait-for-deployment: true
     deployment-timeout: 600
@@ -93,7 +91,6 @@ jobs:
           FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_M2M_APP_CLIENT_ID }}
           FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_M2M_APP_CLIENT_SECRET }}
         with:
-          environment: staging
           wait-for-deployment: true
           deployment-timeout: 300
       
@@ -110,9 +107,7 @@ jobs:
 |-------|-------------|----------|---------|
 | `oauth-url` | OAuth token endpoint URL | No | `https://divine-lion-50-staging.authkit.app/oauth2/token` |
 | `scope` | OAuth scope for the token request | No | `FTL GitHub Deploy Action` |
-| `deployment-url` | FTL deployment endpoint URL | No | - |
 | `project-path` | Path to FTL project | No | `.` (current directory) |
-| `environment` | Deployment environment (staging, production, etc.) | No | `staging` |
 | `wait-for-deployment` | Wait for deployment to complete | No | `true` |
 | `deployment-timeout` | Maximum time to wait for deployment (seconds) | No | `300` |
 | `debug` | Enable debug mode with detailed logging | No | `false` |
@@ -156,7 +151,6 @@ grant_type=client_credentials
     FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_M2M_APP_CLIENT_ID }}
     FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_M2M_APP_CLIENT_SECRET }}
   with:
-    environment: staging
     oauth-url: https://divine-lion-50-staging.authkit.app/oauth2/token
 ```
 
@@ -169,7 +163,6 @@ grant_type=client_credentials
     FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_PROD_CLIENT_ID }}
     FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_PROD_CLIENT_SECRET }}
   with:
-    environment: production
     oauth-url: https://auth.production.example.com/oauth2/token
     scope: 'deploy:production'
     deployment-timeout: 600
@@ -279,8 +272,6 @@ jobs:
         env:
           FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_STAGING_CLIENT_ID }}
           FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_STAGING_CLIENT_SECRET }}
-        with:
-          environment: staging
   
   deploy-production:
     needs: deploy-staging
@@ -295,7 +286,6 @@ jobs:
           FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_PROD_CLIENT_ID }}
           FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_PROD_CLIENT_SECRET }}
         with:
-          environment: production
           deployment-timeout: 600
 ```
 

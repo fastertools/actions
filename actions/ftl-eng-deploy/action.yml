@@ -16,11 +16,6 @@ inputs:
     required: false
     default: 'FTL GitHub Deploy Action'
   
-  deployment-url:
-    description: 'FTL deployment endpoint URL'
-    required: false
-    default: ''
-  
   project-path:
     description: 'Path to FTL project (default: current directory)'
     required: false
@@ -267,16 +262,11 @@ runs:
           exit 1
         fi
         
-        log_info "OAuth token is available in environment (masked)"
-        log_info "Token type: ${FTL_AUTH_TYPE:-Bearer}"
+        echo "ℹ️ OAuth token is available in environment (masked)"
+        echo "ℹ️ Token type: ${FTL_AUTH_TYPE:-Bearer}"
         
         # Build ftl eng deploy command
         FTL_CMD="ftl eng deploy"
-        
-        # Add deployment URL if specified
-        if [[ -n "${{ inputs.deployment-url }}" ]]; then
-          FTL_CMD="$FTL_CMD --url=${{ inputs.deployment-url }}"
-        fi
         
         echo "📝 Deployment command: $FTL_CMD"
         echo "📝 FTL_AUTH_TOKEN is set: $([ -n "${FTL_AUTH_TOKEN:-}" ] && echo 'Yes (masked)' || echo 'No')"
