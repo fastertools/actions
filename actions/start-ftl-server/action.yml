@@ -225,6 +225,12 @@ runs:
         
         echo "::group::🏥 Server Health Check"
         
+        # Check if jq is available for MCP response parsing
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "ERROR: jq is required for MCP health checks but not installed" >&2
+          exit 1
+        fi
+        
         SERVER_PID=$(cat "$HOME/ftl-server.pid" 2>/dev/null || echo "")
         if [[ -z "$SERVER_PID" ]]; then
           echo "ERROR: Could not find server PID file" >&2
@@ -239,7 +245,9 @@ runs:
           SERVER_URL="http://localhost:8080"  # FTL default port
         fi
         
-        HEALTH_URL="${SERVER_URL}/health"  # Assuming FTL has a health endpoint
+        # FTL server uses MCP (Model Context Protocol) - use tools/list for health check
+        MCP_URL="${SERVER_URL}/mcp"
+        HEALTH_URL="$MCP_URL"
         
         echo "server-url=$SERVER_URL" >> "$GITHUB_OUTPUT"
         echo "health-check-url=$HEALTH_URL" >> "$GITHUB_OUTPUT"
@@ -276,20 +284,36 @@ runs:
             exit 1
           fi
           
-          # Try to connect to server
-          if curl -f -s --connect-timeout 5 --max-time 10 "$HEALTH_URL" >/dev/null 2>&1; then
-            echo "✅ Server health check passed!"
-            echo "✅ Server is ready at: $SERVER_URL"
+          # Try MCP tools/list command for health check
+          mcp_request='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+          
+          if curl -f -s --connect-timeout 5 --max-time 10 \
+               -H "Content-Type: application/json" \
+               -X POST \
+               -d "$mcp_request" \
+               "$HEALTH_URL" | jq -e '.result.tools' >/dev/null 2>&1; then
+            echo "✅ MCP health check passed (tools/list responded correctly)!"
+            echo "✅ FTL server is ready at: $SERVER_URL"
             break
           elif curl -f -s --connect-timeout 5 --max-time 10 "$SERVER_URL" >/dev/null 2>&1; then
-            # Health endpoint might not exist, but server responds
-            echo "✅ Server is responding (health endpoint not available)"
-            echo "✅ Server is ready at: $SERVER_URL"
-            break
+            # Fallback: basic HTTP check if MCP endpoint not ready yet
+            echo "⏳ Server responding but MCP not ready yet..."
           else
             if [[ $attempt -eq $max_attempts ]]; then
-              echo "ERROR: Server health check failed after ${timeout_seconds}s" >&2
+              echo "ERROR: MCP health check failed after ${timeout_seconds}s" >&2
               echo "🔍 Server process status: $(ps -p "$SERVER_PID" -o pid,ppid,stat,comm 2>/dev/null || echo 'not found')"
+              echo "🔍 Attempted MCP endpoint: $HEALTH_URL"
+              echo "🔍 MCP tools/list request: $mcp_request"
+              
+              # Try basic connectivity test
+              echo "🔍 Basic connectivity test:"
+              if curl -f -s --connect-timeout 5 --max-time 10 "$SERVER_URL" >/dev/null 2>&1; then
+                echo "  ✅ Server responds to HTTP requests"
+                echo "  ❌ But MCP tools/list endpoint not working"
+              else
+                echo "  ❌ Server not responding to HTTP requests"
+              fi
+              
               if [[ -f "$HOME/ftl-server.log" ]]; then
                 echo "::group::📋 Recent Server Logs"
                 tail -50 "$HOME/ftl-server.log"

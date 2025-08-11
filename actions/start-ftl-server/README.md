@@ -7,7 +7,7 @@ Start the FTL server in background with health checks and process management for
 ## Features
 
 - ✅ **Background Process Management**: Starts server as background daemon with PID tracking
-- ✅ **Health Check Verification**: Ensures server is ready before continuing workflow
+- ✅ **MCP Health Check**: Uses Model Context Protocol `tools/list` to verify server readiness
 - ✅ **Comprehensive Error Handling**: Production-grade error handling with detailed diagnostics
 - ✅ **Flexible Configuration**: Support for custom ports, config files, and log levels
 - ✅ **Process Monitoring**: Built-in process health monitoring and log management
@@ -127,16 +127,22 @@ Server logs are automatically written to `~/ftl-server.log`:
 
 ### Server Health Monitoring
 
-The action includes built-in health monitoring, but you can add additional checks:
+The action uses MCP `tools/list` for health checking, but you can add additional MCP calls:
 
 ```yaml
-- name: Additional Health Check
+- name: Additional MCP Health Check
   run: |
-    # Wait for server to be fully ready
-    timeout 60s bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+    # Test MCP tools/list endpoint directly
+    curl -H "Content-Type: application/json" \
+         -X POST \
+         -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+         http://localhost:8080/mcp | jq '.result.tools'
     
-    # Verify server is responding correctly
-    curl -f http://localhost:8080/api/status
+    # Test specific MCP functionality
+    curl -H "Content-Type: application/json" \
+         -X POST \
+         -d '{"jsonrpc":"2.0","id":2,"method":"resources/list","params":{}}' \
+         http://localhost:8080/mcp
 ```
 
 ## Error Handling
@@ -202,12 +208,21 @@ The action includes comprehensive error handling:
 - Server is only accessible from localhost by default
 - Consider using authentication for production deployments
 
+## MCP Integration
+
+This action uses the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) specification for health checking:
+
+- **Health Check Method**: `tools/list` JSON-RPC 2.0 request
+- **Endpoint**: `http://localhost:PORT/mcp` (configurable port)
+- **Verification**: Ensures MCP server responds with valid tools list
+- **Fallback**: Basic HTTP connectivity if MCP not ready yet
+
 ## Limitations
 
-- Currently supports Linux and macOS runners only
+- Currently supports Linux and macOS runners only  
 - Server runs for the duration of the job only
 - No built-in support for HTTPS (use reverse proxy if needed)
-- Health check assumes standard HTTP endpoints
+- Health check requires MCP-compliant FTL server
 
 ## Server Lifecycle Management
 
