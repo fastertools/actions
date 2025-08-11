@@ -393,8 +393,7 @@ runs:
               echo "::endgroup::"
             fi
             exit 1
-          fi
-            
+          else
             echo "⏳ Server not ready yet, waiting ${sleep_interval}s..."
             sleep $sleep_interval
           fi
