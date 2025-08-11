@@ -32,9 +32,11 @@ Start the FTL server in background with health checks and process management for
   uses: fastertools/actions/actions/start-ftl-server@v1
   with:
     port: 9000
-    log-level: debug
+    build: true
+    watch: true
     health-check-timeout: 60
-    config-file: ./ftl-config.toml
+    log-dir: ./custom-logs
+    config-file: ./my-toolbox
 ```
 
 ### Complete Workflow Example
@@ -62,7 +64,7 @@ jobs:
         uses: fastertools/actions/actions/start-ftl-server@v1
         with:
           port: 8080
-          log-level: info
+          build: true
           health-check-timeout: 30
       
       - name: Run Integration Tests
@@ -82,7 +84,10 @@ jobs:
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `health-check-timeout` | Maximum time to wait for server health check (seconds) | No | `30` |
-| `log-level` | Server log level (`debug`, `info`, `warn`, `error`) | No | `info` |
+| `build` | Build before starting server | No | `false` |
+| `watch` | Watch files and rebuild automatically | No | `false` |
+| `clear` | Clear screen on rebuild (only with --watch) | No | `false` |
+| `log-dir` | Directory for component logs | No | `.ftl/logs` (default) |
 | `port` | Port for FTL server | No | Auto-detect |
 | `config-file` | Path to FTL configuration file | No | - |
 | `background` | Run server in background (`true`) or foreground (`false`) | No | `true` |
@@ -180,7 +185,8 @@ The action includes comprehensive error handling:
   uses: fastertools/actions/actions/start-ftl-server@v1
   with:
     health-check-timeout: 120  # Increase timeout for slow environments
-    log-level: debug           # Enable debug logging
+    build: true                # Ensure fresh build
+    watch: false               # Disable watch in CI
 ```
 
 #### Port Conflicts

@@ -11,10 +11,25 @@ inputs:
     required: false
     default: '30'
   
-  log-level:
-    description: 'Server log level (debug, info, warn, error)'
+  build:
+    description: 'Build before starting server'
     required: false
-    default: 'info'
+    default: 'false'
+  
+  watch:
+    description: 'Watch files and rebuild automatically'
+    required: false
+    default: 'false'
+    
+  clear:
+    description: 'Clear screen on rebuild (only with --watch)'
+    required: false
+    default: 'false'
+    
+  log-dir:
+    description: 'Directory for component logs (default: .ftl/logs)'
+    required: false
+    default: ''
     
   port:
     description: 'Port for FTL server (default: auto-detect)'
@@ -71,12 +86,15 @@ runs:
           fi
         fi
         
-        # Validate log level
-        log_level="${{ inputs.log-level }}"
-        case "$log_level" in
-          "debug"|"info"|"warn"|"error") ;;
-          *) echo "ERROR: log-level must be one of: debug, info, warn, error, got: '$log_level'" >&2; exit 1 ;;
-        esac
+        # Validate boolean inputs
+        for input_var in "build:${{ inputs.build }}" "watch:${{ inputs.watch }}" "clear:${{ inputs.clear }}"; do
+          name=${input_var%:*}
+          value=${input_var#*:}
+          case "$value" in
+            "true"|"false") ;;
+            *) echo "ERROR: $name must be 'true' or 'false', got: '$value'" >&2; exit 1 ;;
+          esac
+        done
         
         # Validate boolean
         background="${{ inputs.background }}"
@@ -149,12 +167,31 @@ runs:
         # Build ftl up command
         FTL_CMD="ftl up"
         
-        # Add log level
-        FTL_CMD="$FTL_CMD --log-level=${{ inputs.log-level }}"
-        
         # Add port if specified
         if [[ -n "${{ inputs.port }}" ]]; then
           FTL_CMD="$FTL_CMD --port=${{ inputs.port }}"
+        fi
+        
+        # Add build flag if specified
+        if [[ "${{ inputs.build }}" == "true" ]]; then
+          FTL_CMD="$FTL_CMD --build"
+        fi
+        
+        # Add watch flag if specified
+        if [[ "${{ inputs.watch }}" == "true" ]]; then
+          FTL_CMD="$FTL_CMD --watch"
+        fi
+        
+        # Add clear flag if specified (only with watch)
+        if [[ "${{ inputs.clear }}" == "true" && "${{ inputs.watch }}" == "true" ]]; then
+          FTL_CMD="$FTL_CMD --clear"
+        elif [[ "${{ inputs.clear }}" == "true" ]]; then
+          log_warning "clear flag ignored (only works with --watch)"
+        fi
+        
+        # Add log directory if specified
+        if [[ -n "${{ inputs.log-dir }}" ]]; then
+          FTL_CMD="$FTL_CMD --log-dir=${{ inputs.log-dir }}"
         fi
         
         # Add config file if specified
@@ -163,7 +200,7 @@ runs:
             echo "ERROR: Configuration file not found: ${{ inputs.config-file }}" >&2
             exit 1
           fi
-          FTL_CMD="$FTL_CMD --config=${{ inputs.config-file }}"
+          FTL_CMD="$FTL_CMD ${{ inputs.config-file }}"  # PATH argument, not --config flag
         fi
         
         log_info "Server command: $FTL_CMD"
@@ -345,12 +382,19 @@ runs:
         echo "✅ FTL Server Status: Running"
         echo "✅ Process ID: $SERVER_PID"
         echo "✅ Server URL: $SERVER_URL"
-        echo "✅ Log Level: ${{ inputs.log-level }}"
+        echo "✅ Build Mode: ${{ inputs.build }}"
+        echo "✅ Watch Mode: ${{ inputs.watch }}"
         
         if [[ -n "${{ inputs.port }}" ]]; then
           echo "✅ Port: ${{ inputs.port }}"
         else
           echo "✅ Port: auto-detected"
+        fi
+        
+        if [[ -n "${{ inputs.log-dir }}" ]]; then
+          echo "✅ Log Directory: ${{ inputs.log-dir }}"
+        else
+          echo "✅ Log Directory: .ftl/logs (default)"
         fi
         
         echo ""
@@ -370,7 +414,8 @@ runs:
         ✅ **Status**: Running in background  
         ✅ **Process ID**: \`$SERVER_PID\`  
         ✅ **Server URL**: [\`$SERVER_URL\`]($SERVER_URL)  
-        ✅ **Log Level**: ${{ inputs.log-level }}  
+        ✅ **Build Mode**: ${{ inputs.build }}  
+        ✅ **Watch Mode**: ${{ inputs.watch }}  
         
         ### 🔧 Server Management
         
