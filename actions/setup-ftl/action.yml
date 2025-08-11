@@ -348,7 +348,7 @@ runs:
         fi
         
         # Download with retry logic
-        download_with_retry "${DOWNLOAD_URL}" "~/.local/bin/ftl" "FTL CLI binary"
+        download_with_retry "${DOWNLOAD_URL}" "$HOME/.local/bin/ftl" "FTL CLI binary"
         
         # Make executable
         chmod +x ~/.local/bin/ftl
@@ -646,7 +646,7 @@ runs:
         log_info "Download URL: ${WKG_URL}"
         
         # Download with retry logic
-        download_with_retry "${WKG_URL}" "~/.local/bin/wkg" "wkg binary"
+        download_with_retry "${WKG_URL}" "$HOME/.local/bin/wkg" "wkg binary"
         
         # Make executable
         chmod +x ~/.local/bin/wkg
