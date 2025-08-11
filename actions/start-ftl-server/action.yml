@@ -34,7 +34,7 @@ inputs:
   port:
     description: 'Port for FTL server (default: auto-detect)'
     required: false
-    default: ''
+    default: '3000'
   
   config-file:
     description: 'Path to FTL configuration file'
@@ -279,7 +279,7 @@ runs:
         if [[ -n "${{ inputs.port }}" ]]; then
           SERVER_URL="http://localhost:${{ inputs.port }}"
         else
-          SERVER_URL="http://localhost:8080"  # FTL default port
+          SERVER_URL="http://localhost:3000"  # FTL default port
         fi
         
         # FTL server uses MCP (Model Context Protocol) - use tools/list for health check
