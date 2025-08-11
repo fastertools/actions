@@ -192,9 +192,13 @@ runs:
                 echo "::add-mask::$access_token"
                 echo "oauth-token=$access_token" >> "$GITHUB_OUTPUT"
                 
+                # Export token as environment variable for subsequent steps
+                echo "FTL_AUTH_TOKEN=$access_token" >> "$GITHUB_ENV"
+                
                 # Extract token type if available
                 token_type=$(echo "$response_body" | jq -r '.token_type // "Bearer"')
                 echo "token-type=$token_type" >> "$GITHUB_OUTPUT"
+                echo "FTL_AUTH_TYPE=$token_type" >> "$GITHUB_ENV"
                 
                 # Extract expiry if available
                 expires_in=$(echo "$response_body" | jq -r '.expires_in // "3600"')
@@ -255,9 +259,16 @@ runs:
           ls -la | head -20
         fi
         
-        # Get OAuth token from previous step
-        OAUTH_TOKEN="${{ steps.auth.outputs.oauth-token }}"
-        TOKEN_TYPE="${{ steps.auth.outputs.token-type }}"
+        # OAuth token should already be in environment from previous step
+        # Verify it's available
+        if [[ -z "${FTL_AUTH_TOKEN:-}" ]]; then
+          echo "ERROR: FTL_AUTH_TOKEN not found in environment" >&2
+          echo "This should have been set by the OAuth step" >&2
+          exit 1
+        fi
+        
+        log_info "OAuth token is available in environment (masked)"
+        log_info "Token type: ${FTL_AUTH_TYPE:-Bearer}"
         
         # Build ftl eng deploy command
         FTL_CMD="ftl eng deploy"
@@ -268,13 +279,7 @@ runs:
         fi
         
         echo "📝 Deployment command: $FTL_CMD"
-        
-        # Set authorization header for FTL
-        export FTL_AUTH_TOKEN="$OAUTH_TOKEN"
-        export FTL_AUTH_TYPE="$TOKEN_TYPE"
-        
-        # Alternative: Pass token via header if FTL supports it
-        # export FTL_AUTHORIZATION="${TOKEN_TYPE} ${OAUTH_TOKEN}"
+        echo "📝 FTL_AUTH_TOKEN is set: $([ -n "${FTL_AUTH_TOKEN:-}" ] && echo 'Yes (masked)' || echo 'No')"
         
         # Create deployment log file
         DEPLOY_LOG="$HOME/ftl-deploy.log"
