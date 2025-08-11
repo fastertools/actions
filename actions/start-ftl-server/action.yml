@@ -324,40 +324,76 @@ runs:
           # Try MCP tools/list command for health check
           mcp_request='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
           
-          if curl -f -s --connect-timeout 5 --max-time 10 \
+          echo "🔍 Testing MCP endpoint: $HEALTH_URL"
+          echo "🔍 MCP request: $mcp_request"
+          
+          # Store curl response for debugging
+          mcp_response=""
+          http_status=""
+          if mcp_response=$(curl -w "HTTP_STATUS:%{http_code}" -s --connect-timeout 5 --max-time 10 \
                -H "Content-Type: application/json" \
                -X POST \
                -d "$mcp_request" \
-               "$HEALTH_URL" | jq -e '.result.tools' >/dev/null 2>&1; then
-            echo "✅ MCP health check passed (tools/list responded correctly)!"
-            echo "✅ FTL server is ready at: $SERVER_URL"
-            break
-          elif curl -f -s --connect-timeout 5 --max-time 10 "$SERVER_URL" >/dev/null 2>&1; then
-            # Fallback: basic HTTP check if MCP endpoint not ready yet
+               "$HEALTH_URL" 2>&1); then
+            
+            # Extract HTTP status and response body
+            http_status=$(echo "$mcp_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+            response_body=$(echo "$mcp_response" | sed 's/HTTP_STATUS:[0-9]*$//')
+            
+            echo "🔍 HTTP Status: $http_status"
+            echo "🔍 MCP Response: $response_body"
+            
+            # Check if we got a valid MCP response
+            if echo "$response_body" | jq -e '.result.tools' >/dev/null 2>&1; then
+              echo "✅ MCP health check passed (tools/list responded correctly)!"
+              echo "✅ FTL server is ready at: $SERVER_URL"
+              break
+            elif echo "$response_body" | jq -e '.error' >/dev/null 2>&1; then
+              echo "⚠️ MCP endpoint responded but with error: $(echo "$response_body" | jq -r '.error.message // .error')"
+            else
+              echo "⚠️ MCP endpoint responded but not valid MCP format"
+            fi
+          else
+            echo "🔍 MCP curl failed: $mcp_response"
+          fi
+          
+          # Fallback: basic HTTP check if MCP endpoint not ready yet
+          echo "🔍 Testing basic HTTP: $SERVER_URL"
+          if basic_response=$(curl -w "HTTP_STATUS:%{http_code}" -s --connect-timeout 5 --max-time 10 "$SERVER_URL" 2>&1); then
+            basic_status=$(echo "$basic_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+            basic_body=$(echo "$basic_response" | sed 's/HTTP_STATUS:[0-9]*$//')
+            echo "🔍 Basic HTTP Status: $basic_status"
+            echo "🔍 Basic HTTP Response: ${basic_body:0:200}$([ ${#basic_body} -gt 200 ] && echo '...')"
             echo "⏳ Server responding but MCP not ready yet..."
           else
-            if [[ $attempt -eq $max_attempts ]]; then
-              echo "ERROR: MCP health check failed after ${timeout_seconds}s" >&2
-              echo "🔍 Server process status: $(ps -p "$SERVER_PID" -o pid,ppid,stat,comm 2>/dev/null || echo 'not found')"
-              echo "🔍 Attempted MCP endpoint: $HEALTH_URL"
-              echo "🔍 MCP tools/list request: $mcp_request"
-              
-              # Try basic connectivity test
-              echo "🔍 Basic connectivity test:"
-              if curl -f -s --connect-timeout 5 --max-time 10 "$SERVER_URL" >/dev/null 2>&1; then
-                echo "  ✅ Server responds to HTTP requests"
-                echo "  ❌ But MCP tools/list endpoint not working"
+            echo "🔍 Basic HTTP also failed"
+          fi
+          
+          if [[ $attempt -eq $max_attempts ]]; then
+            echo "ERROR: MCP health check failed after ${timeout_seconds}s" >&2
+            echo "🔍 Server process status: $(ps -p "$SERVER_PID" -o pid,ppid,stat,comm 2>/dev/null || echo 'not found')"
+            echo "🔍 Final check - what endpoints are available:"
+            
+            # Try to discover what endpoints exist
+            for endpoint in "/" "/health" "/mcp" "/api" "/tools/list"; do
+              test_url="${SERVER_URL}${endpoint}"
+              echo "  Testing: $test_url"
+              if response=$(curl -w "HTTP:%{http_code}" -s --connect-timeout 2 --max-time 5 "$test_url" 2>&1); then
+                status=$(echo "$response" | grep -o 'HTTP:[0-9]*' | cut -d: -f2)
+                body=$(echo "$response" | sed 's/HTTP:[0-9]*$//')
+                echo "    Status: $status, Body: ${body:0:100}$([ ${#body} -gt 100 ] && echo '...')"
               else
-                echo "  ❌ Server not responding to HTTP requests"
+                echo "    Failed: $response"
               fi
-              
-              if [[ -f "$HOME/ftl-server.log" ]]; then
-                echo "::group::📋 Recent Server Logs"
-                tail -50 "$HOME/ftl-server.log"
-                echo "::endgroup::"
-              fi
-              exit 1
+            done
+            
+            if [[ -f "$HOME/ftl-server.log" ]]; then
+              echo "::group::📋 Recent Server Logs"
+              tail -50 "$HOME/ftl-server.log"
+              echo "::endgroup::"
             fi
+            exit 1
+          fi
             
             echo "⏳ Server not ready yet, waiting ${sleep_interval}s..."
             sleep $sleep_interval
@@ -422,17 +458,6 @@ runs:
         **View server logs:**
         \`\`\`bash
         cat ~/ftl-server.log
-        \`\`\`
-        
-        **Check server status:**
-        \`\`\`bash
-        ps -p $SERVER_PID
-        curl $SERVER_URL/health
-        \`\`\`
-        
-        **Stop server (if needed):**
-        \`\`\`bash
-        kill $SERVER_PID
         \`\`\`
         
         ---
