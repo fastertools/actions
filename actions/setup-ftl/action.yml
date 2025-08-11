@@ -351,7 +351,7 @@ runs:
         download_with_retry "${DOWNLOAD_URL}" "$HOME/.local/bin/ftl" "FTL CLI binary"
         
         # Make executable
-        chmod +x ~/.local/bin/ftl
+        chmod +x "$HOME/.local/bin/ftl"
         log_success "Made FTL CLI executable"
         
         # Add to PATH for GitHub Actions and export for current session
@@ -424,16 +424,30 @@ runs:
         # Download and install Spin using platform detection
         case "${{ runner.os }}" in
           "Linux")
-            log_step "Downloading Spin for Linux"
-            if ! curl -fsSL --connect-timeout 10 --max-time 120 https://developer.fermyon.com/downloads/fwf_install.sh | bash; then
+            log_step "Downloading Spin install script for Linux"
+            SPIN_SCRIPT=$(mktemp)
+            if ! curl -fsSL --connect-timeout 10 --max-time 120 "https://developer.fermyon.com/downloads/fwf_install.sh" -o "$SPIN_SCRIPT"; then
+              error_exit "Failed to download Spin install script for Linux"
+            fi
+            log_step "Executing Spin install script"
+            if ! bash "$SPIN_SCRIPT"; then
+              rm -f "$SPIN_SCRIPT"
               error_exit "Failed to install Spin on Linux"
             fi
+            rm -f "$SPIN_SCRIPT"
             ;;
           "macOS")
-            log_step "Downloading Spin for macOS"
-            if ! curl -fsSL --connect-timeout 10 --max-time 120 https://wasm-functions.fermyon.app/downloads/install.sh | bash; then
+            log_step "Downloading Spin install script for macOS"
+            SPIN_SCRIPT=$(mktemp)
+            if ! curl -fsSL --connect-timeout 10 --max-time 120 "https://wasm-functions.fermyon.app/downloads/install.sh" -o "$SPIN_SCRIPT"; then
+              error_exit "Failed to download Spin install script for macOS"
+            fi
+            log_step "Executing Spin install script"
+            if ! bash "$SPIN_SCRIPT"; then
+              rm -f "$SPIN_SCRIPT"
               error_exit "Failed to install Spin on macOS"
             fi
+            rm -f "$SPIN_SCRIPT"
             ;;
           *)
             error_exit "Unsupported OS for Spin installation: ${{ runner.os }}"
@@ -442,17 +456,17 @@ runs:
         
         # Move to local bin and add to PATH
         if [[ -f "./spin" ]]; then
-          mv ./spin ~/.local/bin/spin
-          chmod +x ~/.local/bin/spin
+          mv ./spin "$HOME/.local/bin/spin"
+          chmod +x "$HOME/.local/bin/spin"
           log_success "Moved Spin to ~/.local/bin"
         else
           error_exit "Spin binary not found after installation"
         fi
         
         # Verify installation
-        if ~/.local/bin/spin --version >/dev/null 2>&1; then
+        if "$HOME/.local/bin/spin" --version >/dev/null 2>&1; then
           spin_version=""
-          spin_version=$(~/.local/bin/spin --version)
+          spin_version=$("$HOME/.local/bin/spin" --version)
           log_success "Spin installed successfully: $spin_version"
         else
           error_exit "Spin installation verification failed"
@@ -649,13 +663,13 @@ runs:
         download_with_retry "${WKG_URL}" "$HOME/.local/bin/wkg" "wkg binary"
         
         # Make executable
-        chmod +x ~/.local/bin/wkg
+        chmod +x "$HOME/.local/bin/wkg"
         log_success "Made wkg executable"
         
         # Verify installation
-        if ~/.local/bin/wkg --version >/dev/null 2>&1; then
+        if "$HOME/.local/bin/wkg" --version >/dev/null 2>&1; then
           wkg_version=""
-          wkg_version=$(~/.local/bin/wkg --version)
+          wkg_version=$("$HOME/.local/bin/wkg" --version)
           log_success "wkg installed successfully: $wkg_version"
         else
           error_exit "wkg installation verification failed"
