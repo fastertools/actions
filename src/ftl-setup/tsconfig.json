@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist"
+  },
+  "exclude": [
+    "setup-ftl-js/__fixtures__",
+    "setup-ftl-js/__tests__",
+    "coverage",
+    "dist",
+    "setup-ftl-js/node_modules"
+  ],
+  "include": ["src"]
+}
