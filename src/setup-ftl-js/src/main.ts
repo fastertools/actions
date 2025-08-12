@@ -224,8 +224,3 @@ async function run(): Promise<void> {
 
 // Export for testing
 export { run }
-
-// Run if this is the main module
-if (require.main === module) {
-  run()
-}

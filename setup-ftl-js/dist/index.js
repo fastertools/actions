@@ -30043,10 +30043,6 @@ async function run() {
         coreExports.endGroup();
     }
 }
-// Run if this is the main module
-if (require.main === module) {
-    run();
-}
 
 /**
  * The entrypoint for the action. This file simply imports and runs the action's
