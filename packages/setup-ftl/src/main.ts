@@ -3,7 +3,7 @@ import * as tc from '@actions/tool-cache'
 import * as exec from '@actions/exec'
 import * as path from 'path'
 import * as fs from 'fs/promises'
-import { detectPlatform } from './shared'
+import { detectPlatform } from './platform'
 
 interface GitHubRelease {
   tag_name: string

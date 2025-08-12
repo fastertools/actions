@@ -104,9 +104,6 @@ importers:
       '@actions/tool-cache':
         specifier: ^2.0.1
         version: 2.0.2
-      '@fastertools/shared':
-        specifier: workspace:*
-        version: link:../shared
     devDependencies:
       '@vercel/ncc':
         specifier: ^0.38.0

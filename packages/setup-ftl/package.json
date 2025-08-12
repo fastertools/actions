@@ -10,8 +10,7 @@
   "dependencies": {
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
-    "@actions/tool-cache": "^2.0.1",
-    "@fastertools/shared": "workspace:*"
+    "@actions/tool-cache": "^2.0.1"
   },
   "devDependencies": {
     "@vercel/ncc": "^0.38.0",
