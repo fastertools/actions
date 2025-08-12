@@ -44,7 +44,7 @@ function copyActionToTopLevel(pkg: { name: string, topLevelDir: string }): void 
     fs.mkdirSync(targetDir, { recursive: true })
   }
   
-  // Copy dist directory
+  // Copy dist directory (excluding unnecessary files)
   const sourceDist = path.join(sourceDir, 'dist')
   const targetDist = path.join(targetDir, 'dist')
   
@@ -53,8 +53,17 @@ function copyActionToTopLevel(pkg: { name: string, topLevelDir: string }): void 
     if (fs.existsSync(targetDist)) {
       fs.rmSync(targetDist, { recursive: true, force: true })
     }
-    // Copy dist directory
-    execSync(`cp -r "${sourceDist}" "${targetDist}"`)
+    
+    // Create target dist directory
+    fs.mkdirSync(targetDist, { recursive: true })
+    
+    // Copy only necessary files (exclude .ts files)
+    const files = fs.readdirSync(sourceDist)
+    for (const file of files) {
+      if (!file.endsWith('.ts')) {
+        execSync(`cp "${path.join(sourceDist, file)}" "${path.join(targetDist, file)}"`)
+      }
+    }
   }
   
   // Copy action.yml
