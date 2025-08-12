@@ -27494,9 +27494,6 @@ async function run() {
         const configFile = coreExports.getInput('config-file');
         const workingDirectory = coreExports.getInput('working-directory');
         const args = coreExports.getInput('args');
-        const healthEndpoint = coreExports.getInput('health-endpoint');
-        const healthMethod = coreExports.getInput('health-method');
-        const healthBody = coreExports.getInput('health-body');
         const envVars = coreExports.getInput('env-vars');
         const options = {
             port: port.toString(),
@@ -27504,9 +27501,6 @@ async function run() {
             configFile,
             workingDirectory,
             args,
-            healthEndpoint,
-            healthMethod,
-            healthBody,
             envVars
         };
         // Validate config file if provided
@@ -27554,20 +27548,11 @@ async function run() {
         coreExports.exportVariable('FTL_SERVER_PID', ftlProcess.pid.toString());
         coreExports.info(`FTL server started with PID: ${ftlProcess.pid}`);
         coreExports.info(`Server process ID: ${ftlProcess.pid}`);
-        // Perform MCP health check
-        const healthUrl = options.healthEndpoint
-            ? `${serverUrl}${options.healthEndpoint}`
-            : `${serverUrl}/health`;
-        coreExports.info(`Performing health check at: ${healthUrl}`);
-        const healthCheckOptions = {
-            timeoutSeconds: options.timeout
-        };
-        if (options.healthMethod) {
-            healthCheckOptions.method = options.healthMethod;
-        }
-        if (options.healthBody) {
-            healthCheckOptions.body = options.healthBody;
-        }
+        // Add a short delay to let the server fully initialize
+        const startupDelay = 3000; // 3 seconds
+        coreExports.info(`Waiting ${startupDelay}ms for server to initialize...`);
+        await new Promise((resolve) => setTimeout(resolve, startupDelay));
+        // Perform MCP health check directly (no /health endpoint)
         try {
             // Use MCP health check for FTL server
             const mcpHealthPassed = await mcpHealthCheck(serverUrl, options.timeout * 1000);

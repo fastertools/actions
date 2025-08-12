@@ -87,9 +87,6 @@ interface ServerStartupOptions {
   configFile?: string
   workingDirectory?: string
   args?: string
-  healthEndpoint?: string
-  healthMethod?: string
-  healthBody?: string
   envVars?: string
 }
 
@@ -264,9 +261,6 @@ async function run(): Promise<void> {
     const configFile = core.getInput('config-file')
     const workingDirectory = core.getInput('working-directory')
     const args = core.getInput('args')
-    const healthEndpoint = core.getInput('health-endpoint')
-    const healthMethod = core.getInput('health-method')
-    const healthBody = core.getInput('health-body')
     const envVars = core.getInput('env-vars')
 
     const options: ServerStartupOptions = {
@@ -275,9 +269,6 @@ async function run(): Promise<void> {
       configFile,
       workingDirectory,
       args,
-      healthEndpoint,
-      healthMethod,
-      healthBody,
       envVars
     }
 
@@ -339,25 +330,12 @@ async function run(): Promise<void> {
     core.info(`FTL server started with PID: ${ftlProcess.pid}`)
     core.info(`Server process ID: ${ftlProcess.pid}`)
 
-    // Perform MCP health check
-    const healthUrl = options.healthEndpoint
-      ? `${serverUrl}${options.healthEndpoint}`
-      : `${serverUrl}/health`
+    // Add a short delay to let the server fully initialize
+    const startupDelay = 3000 // 3 seconds
+    core.info(`Waiting ${startupDelay}ms for server to initialize...`)
+    await new Promise((resolve) => setTimeout(resolve, startupDelay))
 
-    core.info(`Performing health check at: ${healthUrl}`)
-
-    const healthCheckOptions: any = {
-      timeoutSeconds: options.timeout
-    }
-
-    if (options.healthMethod) {
-      healthCheckOptions.method = options.healthMethod
-    }
-
-    if (options.healthBody) {
-      healthCheckOptions.body = options.healthBody
-    }
-
+    // Perform MCP health check directly (no /health endpoint)
     try {
       // Use MCP health check for FTL server
       const mcpHealthPassed = await mcpHealthCheck(
