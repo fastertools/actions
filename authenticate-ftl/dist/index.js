@@ -25643,7 +25643,118 @@ module.exports = {
 
 /***/ }),
 
-/***/ 671:
+/***/ 2401:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.run = run;
+const core = __importStar(__nccwpck_require__(9999));
+const shared_1 = __nccwpck_require__(7670);
+async function run() {
+    try {
+        core.startGroup('🔐 FTL Authentication');
+        const method = core.getInput('method') || 'auto';
+        const setOutput = core.getBooleanInput('set-output');
+        const clientId = core.getInput('client-id');
+        const clientSecret = core.getInput('client-secret');
+        core.info(`Authentication method: ${method}`);
+        core.info(`Set output: ${setOutput}`);
+        let token;
+        // Try to get cached token first
+        const cachedToken = (0, shared_1.getCachedOAuthToken)();
+        if (cachedToken && method === 'auto') {
+            core.info('Using cached authentication token');
+            token = cachedToken;
+        }
+        else if (method === 'interactive') {
+            throw new Error('Interactive authentication not yet supported - use client credentials');
+        }
+        else {
+            // Client credentials flow
+            if (!clientId || !clientSecret) {
+                throw new Error('client-id and client-secret are required for non-interactive authentication');
+            }
+            core.info('Using client credentials flow');
+            const oauthUrl = process.env.FTL_OAUTH_URL || 'https://api.ftl.dev/oauth/token';
+            try {
+                token = await (0, shared_1.obtainOAuthToken)({
+                    url: oauthUrl,
+                    clientId,
+                    clientSecret,
+                    scope: 'deploy'
+                });
+                // Cache the token for future use
+                (0, shared_1.cacheOAuthToken)(token);
+            }
+            catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                throw new Error(`OAuth authentication failed: ${errorMessage}`);
+            }
+        }
+        // Export token for subsequent actions
+        core.exportVariable('FTL_AUTH_TOKEN', token.accessToken);
+        core.setSecret(token.accessToken);
+        // Optional: set as output
+        if (setOutput) {
+            core.setOutput('token', token.accessToken);
+        }
+        // Set additional outputs
+        core.setOutput('token-type', token.tokenType);
+        core.setOutput('expires-in', token.expiresIn.toString());
+        core.info('✅ Authentication successful. Token cached for workflow.');
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        core.setFailed(`Authentication failed: ${errorMessage}`);
+    }
+    finally {
+        core.endGroup();
+    }
+}
+// Run if this is the main module
+if (require.main === require.cache[eval('__filename')]) {
+    run();
+}
+
+
+/***/ }),
+
+/***/ 7670:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -25663,15 +25774,15 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-__exportStar(__nccwpck_require__(5900), exports);
-__exportStar(__nccwpck_require__(5949), exports);
-__exportStar(__nccwpck_require__(762), exports);
-__exportStar(__nccwpck_require__(6544), exports);
+__exportStar(__nccwpck_require__(9623), exports);
+__exportStar(__nccwpck_require__(9952), exports);
+__exportStar(__nccwpck_require__(9087), exports);
+__exportStar(__nccwpck_require__(6025), exports);
 
 
 /***/ }),
 
-/***/ 5949:
+/***/ 9952:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -25778,7 +25889,7 @@ async function healthCheck(url, retries = 3) {
 
 /***/ }),
 
-/***/ 6544:
+/***/ 6025:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -25933,7 +26044,7 @@ exports.FTLAuthClient = FTLAuthClient;
 
 /***/ }),
 
-/***/ 5900:
+/***/ 9623:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -26049,7 +26160,7 @@ function getDownloadUrl(version, platform) {
 
 /***/ }),
 
-/***/ 762:
+/***/ 9087:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -26191,117 +26302,6 @@ async function spawnAsync(command, args) {
 function setupProcessCleanup(processes) {
     // CRAWL Phase: Minimal stub implementation
     console.log(`🧹 Stub process cleanup for ${processes.length} processes`);
-}
-
-
-/***/ }),
-
-/***/ 2401:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.run = run;
-const core = __importStar(__nccwpck_require__(9999));
-const shared_1 = __nccwpck_require__(671);
-async function run() {
-    try {
-        core.startGroup('🔐 FTL Authentication');
-        const method = core.getInput('method') || 'auto';
-        const setOutput = core.getBooleanInput('set-output');
-        const clientId = core.getInput('client-id');
-        const clientSecret = core.getInput('client-secret');
-        core.info(`Authentication method: ${method}`);
-        core.info(`Set output: ${setOutput}`);
-        let token;
-        // Try to get cached token first
-        const cachedToken = (0, shared_1.getCachedOAuthToken)();
-        if (cachedToken && method === 'auto') {
-            core.info('Using cached authentication token');
-            token = cachedToken;
-        }
-        else if (method === 'interactive') {
-            throw new Error('Interactive authentication not yet supported - use client credentials');
-        }
-        else {
-            // Client credentials flow
-            if (!clientId || !clientSecret) {
-                throw new Error('client-id and client-secret are required for non-interactive authentication');
-            }
-            core.info('Using client credentials flow');
-            const oauthUrl = process.env.FTL_OAUTH_URL || 'https://api.ftl.dev/oauth/token';
-            try {
-                token = await (0, shared_1.obtainOAuthToken)({
-                    url: oauthUrl,
-                    clientId,
-                    clientSecret,
-                    scope: 'deploy'
-                });
-                // Cache the token for future use
-                (0, shared_1.cacheOAuthToken)(token);
-            }
-            catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                throw new Error(`OAuth authentication failed: ${errorMessage}`);
-            }
-        }
-        // Export token for subsequent actions
-        core.exportVariable('FTL_AUTH_TOKEN', token.accessToken);
-        core.setSecret(token.accessToken);
-        // Optional: set as output
-        if (setOutput) {
-            core.setOutput('token', token.accessToken);
-        }
-        // Set additional outputs
-        core.setOutput('token-type', token.tokenType);
-        core.setOutput('expires-in', token.expiresIn.toString());
-        core.info('✅ Authentication successful. Token cached for workflow.');
-    }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        core.setFailed(`Authentication failed: ${errorMessage}`);
-    }
-    finally {
-        core.endGroup();
-    }
-}
-// Run if this is the main module
-if (require.main === require.cache[eval('__filename')]) {
-    run();
 }
 
 

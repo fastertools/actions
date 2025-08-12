@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken } from '@fastertools/shared'
+import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken } from './shared'
 
 interface DeploymentResponse {
   deployment_id: string

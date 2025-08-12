@@ -61,8 +61,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 @fastertools/ftl-eng-deploy
 
-@fastertools/shared
-
 @fastify/busboy
 MIT
 Copyright Brian White. All rights reserved.

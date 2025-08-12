@@ -13,6 +13,9 @@ function buildAction(pkg: { name: string, topLevelDir: string }): void {
   console.log(`🔨 Building ${pkg.name}...`)
   
   try {
+    // Copy shared package files to local directory first
+    copySharedToLocal(pkg.name)
+    
     // Use ncc CLI to build the action with timeout
     const command = `npx ncc build packages/${pkg.name}/src/main.ts --out packages/${pkg.name}/dist --source-map --license licenses.txt`
     console.log(`Running: ${command}`)
@@ -30,6 +33,44 @@ function buildAction(pkg: { name: string, topLevelDir: string }): void {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error(`❌ Failed to build ${pkg.name}:`, errorMessage)
     process.exit(1)
+  }
+}
+
+function copySharedToLocal(packageName: string): void {
+  const targetDir = `packages/${packageName}/src/shared`
+  const sourceDir = 'packages/shared/src'
+  
+  console.log(`📦 Copying shared package to ${packageName}/src/shared/`)
+  
+  // Remove existing shared if it exists
+  if (fs.existsSync(targetDir)) {
+    fs.rmSync(targetDir, { recursive: true, force: true })
+  }
+  
+  // Copy shared source files
+  execSync(`cp -r "${sourceDir}" "${targetDir}"`)
+  
+  // Update imports in main.ts to use local shared files
+  updateImportsToLocal(packageName)
+}
+
+function updateImportsToLocal(packageName: string): void {
+  const mainTsPath = `packages/${packageName}/src/main.ts`
+  
+  if (fs.existsSync(mainTsPath)) {
+    console.log(`🔄 Updating imports in ${packageName}/src/main.ts`)
+    
+    // Read the file content
+    let content = fs.readFileSync(mainTsPath, 'utf8')
+    
+    // Replace @fastertools/shared imports with local ./shared imports
+    content = content.replace(
+      /from ['"]@fastertools\/shared['"]/g,
+      "from './shared'"
+    )
+    
+    // Write back the modified content
+    fs.writeFileSync(mainTsPath, content)
   }
 }
 
@@ -57,11 +98,13 @@ function copyActionToTopLevel(pkg: { name: string, topLevelDir: string }): void 
     // Create target dist directory
     fs.mkdirSync(targetDist, { recursive: true })
     
-    // Copy only necessary files (exclude .ts files)
+    // Copy only necessary files (exclude .ts files and shared directory)
     const files = fs.readdirSync(sourceDist)
     for (const file of files) {
-      if (!file.endsWith('.ts')) {
-        execSync(`cp "${path.join(sourceDist, file)}" "${path.join(targetDist, file)}"`)
+      if (!file.endsWith('.ts') && file !== 'shared') {
+        const sourcePath = path.join(sourceDist, file)
+        const targetPath = path.join(targetDist, file)
+        execSync(`cp "${sourcePath}" "${targetPath}"`)
       }
     }
   }

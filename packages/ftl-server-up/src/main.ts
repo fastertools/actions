@@ -1,7 +1,7 @@
 import * as core from '@actions/core'
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs/promises'
-import { killProcessGracefully } from '@fastertools/shared'
+import { killProcessGracefully } from './shared'
 
 async function mcpHealthCheck(serverUrl: string, timeoutMs: number = 30000): Promise<boolean> {
   const mcpUrl = `${serverUrl}/mcp`

@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken, type OAuthToken } from '@fastertools/shared'
+import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken, type OAuthToken } from './shared'
 
 async function run(): Promise<void> {
   try {
