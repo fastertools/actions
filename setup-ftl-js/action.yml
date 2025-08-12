@@ -1,6 +1,6 @@
 name: 'Setup FTL CLI (TypeScript)'
 description: 'Download and setup FTL CLI binary with caching support'
-author: 'FasterTools'
+author: 'TBD'
 
 branding:
   icon: 'download'
@@ -15,6 +15,10 @@ inputs:
     description: 'Enable GitHub Actions tool cache'
     required: false
     default: 'true'
+  install-dependencies:
+    description: 'Install additional dependencies (docker, spin, etc.)'
+    required: false
+    default: 'false'
 
 outputs:
   ftl-path:
@@ -26,4 +30,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: '../packages/setup-ftl/dist/index.js'
+  main: 'dist/index.js'
