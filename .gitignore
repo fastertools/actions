@@ -4,3 +4,5 @@
 *.pem
 spin
 spin.sig
+
+node_modules
