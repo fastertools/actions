@@ -1,0 +1,8 @@
+.agent
+.claude
+
+*.pem
+spin
+spin.sig
+
+node_modules

@@ -1,213 +1,122 @@
-# FasterTools GitHub Actions
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/static/image/logo-dark.png">
+    <img alt="spin logo" src="./docs/static/image/logo.png" width="300" height="128">
+  </picture>
+  <p>Spin is a framework for building, deploying, and running fast, secure, and composable cloud microservices with WebAssembly.</p>
+      <a href="https://github.com/spinframework/spin/actions/workflows/build.yml"><img src="https://github.com/spinframework/spin/actions/workflows/build.yml/badge.svg" alt="build status" /></a>
+      <a href="https://cloud-native.slack.com/archives/C089NJ9G1V0"><img alt="Slack" src="https://img.shields.io/badge/slack-spin-green.svg?logo=slack"></a>
+      <a href="https://www.bestpractices.dev/projects/10373"><img src="https://www.bestpractices.dev/projects/10373/badge"></a>
+</div>
 
-[![Test Actions](https://github.com/fastertools/actions/workflows/test.yml/badge.svg)](https://github.com/fastertools/actions/actions/workflows/test.yml)
+## What is Spin?
 
-A collection of production-ready GitHub Actions for the FasterTools ecosystem. Each action is designed with comprehensive error handling, caching, and cross-platform support.
+Spin is an open source framework for building and running fast, secure, and
+composable cloud microservices with WebAssembly. It aims to be the easiest way
+to get started with WebAssembly microservices, and takes advantage of the latest
+developments in the
+[WebAssembly component model](https://github.com/WebAssembly/component-model)
+and [Wasmtime](https://wasmtime.dev/) runtime.
 
-## Available Actions
+Spin offers a simple CLI that helps you create, distribute, and execute
+applications, and in the next sections we will learn more about Spin
+applications and how to get started.
 
-### 📦 [Setup FTL CLI](actions/setup-ftl/)
+## Getting started
 
-Install the FTL CLI and its dependencies with production-grade reliability.
-
-**Quick Usage:**
-```yaml
-- uses: fastertools/actions/actions/setup-ftl@v1
-  with:
-    version: 'latest'
-    install-dependencies: true
+See the [Install Spin](https://spinframework.dev/install) page of the [Spin documentation](https://spinframework.dev) for a detailed
+guide on installing and configuring Spin, but in short run the following commands:
+```bash
+curl -fsSL https://spinframework.dev/downloads/install.sh | bash
+sudo mv ./spin /usr/local/bin/spin
 ```
 
-**Features:**
-- ✅ Production hardened shell implementation  
-- ✅ Network resilient with retry logic  
-- ✅ Comprehensive input validation  
-- ✅ Debug mode for troubleshooting  
-- ✅ Intelligent dependency caching  
-- ✅ Cross-platform support (Linux/macOS x64/ARM64)  
+Alternatively, you could [build Spin from source](https://spinframework.dev/contributing-spin).
 
-[📚 Full Documentation →](actions/setup-ftl/README.md)
+To get started writing apps, follow the [quickstart guide](https://spinframework.dev/quickstart/),
+and then follow the
+[Rust](https://spinframework.dev/rust-components/), [JavaScript](https://spinframework.dev/javascript-components), [Python](https://spinframework.dev/python-components), or [Go](https://spinframework.dev/go-components/)
+language guides, and the [guide on writing Spin applications](https://spinframework.dev/writing-apps/).
 
-### 🚀 [Start FTL Server](actions/start-ftl-server/)
+## Usage
+Below is an example of using the `spin` CLI to create a new Spin application.  To run the example you will need to install the `wasm32-wasip1` target for Rust.
 
-Start the FTL server in background with health checks and process management.
-
-**Quick Usage:**
-```yaml
-- uses: fastertools/actions/actions/start-ftl-server@v1
-  with:
-    port: 8080
-    build: true
+```bash
+$ rustup target add wasm32-wasip1
 ```
 
-[📚 Full Documentation →](actions/start-ftl-server/README.md)
+First, run the `spin new` command to create a Spin application from a template.
+```bash
+# Create a new Spin application named 'hello-rust' based on the Rust http template, accepting all defaults
+$ spin new --accept-defaults -t http-rust hello-rust
+```
+Running the `spin new` command created a `hello-rust` directory with all the necessary files for your application. Change to the `hello-rust` directory and build the application with `spin build`, then run it locally with `spin up`:
 
-### 🛑 [Stop FTL Server](actions/stop-ftl-server/)
+```bash
+# Compile to Wasm by executing the `build` command.
+$ spin build
+Executing the build command for component hello-rust: cargo build --target wasm32-wasip1 --release
+    Finished release [optimized] target(s) in 0.03s
+Successfully ran the build command for the Spin components.
 
-Gracefully stop a running FTL server (optional - server stops automatically at job end).
+# Run the application locally.
+$ spin up
+Logging component stdio to ".spin/logs/"
 
-**Quick Usage:**
-```yaml
-- uses: fastertools/actions/actions/stop-ftl-server@v1
-  with:
-    server-pid: ${{ steps.start.outputs.server-pid }}
+Serving http://127.0.0.1:3000
+Available Routes:
+  hello-rust: http://127.0.0.1:3000 (wildcard)
 ```
 
-[📚 Full Documentation →](actions/stop-ftl-server/README.md)
+That's it! Now that the application is running, use your browser or cURL in another shell to try it out:
 
-### 🚢 [FTL Engineering Deploy](actions/ftl-eng-deploy/)
+```bash
+# Send a request to the application.
+$ curl -i 127.0.0.1:3000
+HTTP/1.1 200 OK
+content-type: text/plain
+transfer-encoding: chunked
+date: Sun, 02 Mar 2025 20:09:11 GMT
 
-Deploy FTL applications to engineering environments with OAuth2 authentication.
-
-**Quick Usage:**
-```yaml
-- uses: fastertools/actions/actions/ftl-eng-deploy@v1
-  env:
-    FTL_M2M_APP_CLIENT_ID: ${{ secrets.FTL_M2M_APP_CLIENT_ID }}
-    FTL_M2M_APP_CLIENT_SECRET: ${{ secrets.FTL_M2M_APP_CLIENT_SECRET }}
-  with:
-    environment: staging
+Hello World!
 ```
 
-**Features:**
-- ✅ OAuth2 M2M authentication  
-- ✅ Multi-environment support  
-- ✅ Deployment tracking  
-- ✅ Configurable timeouts  
-- ✅ Async deployment option  
+You can make the app do more by editting the `src/lib.rs` file in the `hello-rust` directory using your favorite editor or IDE. To learn more about writing Spin applications see [Writing Applications](https://spinframework.dev/writing-apps) in the Spin documentation.  To learn how to publish and distribute your application see the [Publishing and Distribution](https://spinframework.dev/distributing-apps) guide in the Spin documentation.
 
-[📚 Full Documentation →](actions/ftl-eng-deploy/README.md)
+## Language Support for Spin Features
 
-## Repository Structure
+The table below summarizes the [feature support](https://spinframework.dev/language-support-overview) in each of the language SDKs.
 
-```
-├── .github/
-│   └── workflows/
-│       └── test.yml          # Test all actions
-├── actions/
-│   ├── setup-ftl/            # FTL CLI installer action
-│   │   ├── action.yml        # Action definition
-│   │   ├── README.md         # Action documentation
-│   │   └── CHANGELOG.md      # Action changelog
-│   ├── start-ftl-server/     # Server lifecycle management
-│   │   ├── action.yml        # Action definition
-│   │   └── README.md         # Action documentation
-│   ├── stop-ftl-server/      # Server shutdown action
-│   │   ├── action.yml        # Action definition
-│   │   └── README.md         # Action documentation
-│   └── ftl-eng-deploy/       # Engineering deployment action
-│       ├── action.yml        # Action definition
-│       └── README.md         # Action documentation
-├── CHANGELOG.md              # Monorepo changelog
-├── LICENSE                   # MIT License
-└── README.md                 # This file - action portal
-```
+| Feature | Rust SDK Supported? | TypeScript SDK Supported? | Python SDK Supported? | Tiny Go SDK Supported? | C# SDK Supported? |
+|-----|-----|-----|-----|-----|-----|
+| **Triggers** |
+| [HTTP](https://spinframework.dev/http-trigger) | Supported | Supported | Supported | Supported | Supported |
+| [Redis](https://spinframework.dev/redis-trigger) | Supported | Supported | Supported | Supported | Not Supported |
+| **APIs** |
+| [Outbound HTTP](https://spinframework.dev/rust-components.md#sending-outbound-http-requests) | Supported | Supported | Supported | Supported | Supported |
+| [Configuration Variables](https://spinframework.dev/variables) | Supported | Supported | Supported | Supported | Supported |
+| [Key Value Storage](https://spinframework.dev/kv-store-api-guide) | Supported | Supported | Supported | Supported | Not Supported |
+| [SQLite Storage](https://spinframework.dev/sqlite-api-guide) | Supported | Supported | Supported | Supported | Not Supported |
+| [MySQL](https://spinframework.dev/rdbms-storage#using-mysql-and-postgresql-from-applications) | Supported | Supported | Not Supported | Supported | Not Supported |
+| [PostgreSQL](https://spinframework.dev/rdbms-storage#using-mysql-and-postgresql-from-applications) | Supported | Supported | Not Supported | Supported | Supported |
+| [Outbound Redis](https://spinframework.dev/rust-components.md#storing-data-in-redis-from-rust-components) | Supported | Supported | Supported | Supported | Supported |
+| [Serverless AI](https://spinframework.dev/serverless-ai-api-guide) | Supported | Supported | Supported | Supported | Not Supported |
+| **Extensibility** |
+| [Authoring Custom Triggers](https://spinframework.dev/extending-and-embedding) | Supported | Not Supported | Not Supported | Not Supported | Not Supported |
 
-## Versioning Strategy
+## Getting Involved and Contributing
 
-Actions in this repository follow a unified versioning strategy:
+We are delighted that you are interested in making Spin better! Thank you!
 
-- **Latest Stable**: Use `@v1` to automatically get the latest stable release
-- **Specific Version**: Use `@v1.2.0` to pin to a specific version
-- **Major Version**: Recommended to use `@v1` for non-breaking updates
+Each Monday at 2:30om UTC and 9:00pm UTC (alternating), we meet to discuss Spin issues, roadmap, and ideas in our Spin Project Meetings. Subscribe to this [Google Calendar](https://calendar.google.com/calendar/u/1?cid=c3Bpbi5tYWludGFpbmVyc0BnbWFpbC5jb20) for meeting dates.
 
-### Version Tags
+The [Spin Project Meeting agenda](https://docs.google.com/document/d/1EG392gb8Eg-1ZEPDy18pgFZvMMrdAEybpCSufFXoe00/edit?usp=sharing) is a public document. The document contains a rolling agenda with the date and time of each meeting, the Zoom link, and topics of discussion for the day. You will also find the meeting minutes for each meeting and the link to the recording. If you have something you would like to demo or discuss at the project meeting, we encourage you to add it to the agenda.
 
-- `setup-ftl/v1.0.0` - Initial stable release
-- `setup-ftl/v1` - Major version tag (automatically updated)
+You can find the contributing guide [here](https://spinframework.dev/contributing-spin).
 
-## Usage Examples
+## Stay in Touch
 
-### Setup FTL CLI with Full Dependencies
+Follow us on Twitter: [@spinframework](https://twitter.com/spinframework)
 
-```yaml
-name: Deploy with FTL
+You can join the Spin community in the [Spin CNCF Slack channel](https://cloud-native.slack.com/archives/C089NJ9G1V0) where you can ask questions, get help, and show off the cool things you are doing with Spin!
 
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup FTL CLI
-        uses: fastertools/actions/actions/setup-ftl@v1
-        with:
-          version: 'latest'
-          install-dependencies: true
-          cache-dependencies: true
-          
-      - name: Deploy Application
-        run: |
-          ftl build
-          ftl deploy
-```
-
-### Debug Mode for Troubleshooting
-
-```yaml
-- name: Setup FTL CLI (Debug Mode)
-  uses: fastertools/actions/actions/setup-ftl@v1
-  with:
-    version: 'latest'
-    debug: true  # Enables detailed logging
-```
-
-## Supported Platforms
-
-All actions in this repository support:
-
-| Platform | x64 | ARM64 |
-|----------|-----|-------|
-| Ubuntu Latest | ✅ | ✅ |
-| Ubuntu 20.04 | ✅ | ✅ |
-| macOS Latest | ✅ | ✅ |
-| macOS 13 | ✅ | ✅ |
-| Windows | ❌ | ❌ |
-
-## Contributing
-
-1. Fork this repository
-2. Create a feature branch for your action
-3. Follow the established patterns in existing actions
-4. Add comprehensive tests
-5. Update documentation
-6. Submit a pull request
-
-### Adding a New Action
-
-When adding a new action to this monorepo:
-
-1. Create a new directory under `actions/`
-2. Follow the structure of existing actions
-3. Include comprehensive error handling
-4. Add platform-specific tests
-5. Update this README.md
-
-## Development Principles
-
-All actions in this repository follow these principles:
-
-- **Production Ready**: Comprehensive error handling and validation
-- **Cross-Platform**: Support for Linux and macOS runners
-- **Debuggable**: Clear error messages and optional debug modes  
-- **Cached**: Intelligent caching for performance
-- **Tested**: Comprehensive test coverage across platforms
-- **Documented**: Clear usage examples and troubleshooting guides
-
-## Support
-
-- 📋 [Issues](https://github.com/fastertools/actions/issues) - Report bugs or request features
-- 📚 [FTL CLI Documentation](https://github.com/fastertools/ftl-cli) - FTL CLI documentation
-- 💬 [Discussions](https://github.com/fastertools/actions/discussions) - Community support
-
-## License
-
-This repository and all actions within it are released under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-*All actions implement hardened shell implementations based on comprehensive risk analysis and production best practices.*

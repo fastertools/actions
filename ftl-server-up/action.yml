@@ -1,0 +1,32 @@
+name: 'Start FTL Server (TypeScript)'
+description: 'Start FTL server with health checks and process management'
+author: 'TBD'
+
+branding:
+  icon: 'play'
+  color: 'green'
+
+inputs:
+  port:
+    description: 'Port to run FTL server on'
+    required: false
+    default: '8080'
+  config-file:
+    description: 'Path to FTL configuration file'
+    required: false
+  timeout:
+    description: 'Health check timeout in seconds'
+    required: false
+    default: '30'
+
+outputs:
+  server-url:
+    description: 'URL of the running FTL server'
+  pid:
+    description: 'Process ID of the FTL server'
+  healthy:
+    description: 'Whether the server passed health checks'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

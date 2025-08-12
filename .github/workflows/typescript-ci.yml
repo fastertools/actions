@@ -1,0 +1,87 @@
+name: TypeScript Actions CI
+on:
+  push:
+    branches: [feat/github-actions-modernization]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build TypeScript Actions
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install pnpm
+        run: npm install -g pnpm
+        
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: TypeScript type checking
+        run: pnpm run typecheck
+        
+      - name: Build all actions
+        run: pnpm run build
+        
+      - name: Verify build artifacts exist
+        run: |
+          ls -la packages/setup-ftl/dist/index.js
+          ls -la packages/ftl-server-up/dist/index.js
+          ls -la packages/ftl-eng-deploy/dist/index.js
+          ls -la packages/authenticate-ftl/dist/index.js
+
+  test-actions:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Test TypeScript Action Skeletons
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install pnpm
+        run: npm install -g pnpm
+        
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Build actions
+        run: pnpm run build
+        
+      - name: Test setup-ftl action (skeleton)
+        uses: ./packages/setup-ftl
+        with:
+          version: 'latest'
+          use-cache: 'true'
+        
+      - name: Test ftl-server-up action (skeleton)  
+        uses: ./packages/ftl-server-up
+        with:
+          port: '8080'
+          timeout: '5'
+          
+      - name: Test authenticate-ftl action (skeleton)
+        uses: ./packages/authenticate-ftl
+        with:
+          method: 'auto'
+          client-id: 'test-client-id'
+          client-secret: 'test-client-secret'
+          
+      - name: Test ftl-eng-deploy action (skeleton)
+        uses: ./packages/ftl-eng-deploy
+        with:
+          project: 'test-project'
+          environment: 'staging'
+          client-id: 'test-client-id'
+          client-secret: 'test-client-secret'
