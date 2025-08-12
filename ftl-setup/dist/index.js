@@ -29945,15 +29945,38 @@ async function installSpin() {
         catch {
             // Spin not found, proceed with installation
         }
-        // Install Spin CLI
-        // Use bash -c to handle the pipe properly
-        await execExports.exec('bash', [
-            '-c',
-            'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
-        ]);
-        // Verify installation
-        await execExports.exec('spin', ['--version']);
-        coreExports.info('✅ Spin installed successfully');
+        // Install Spin CLI to temp directory first
+        const tempDir = process.env.RUNNER_TEMP || '/tmp';
+        const spinInstallDir = path.join(tempDir, 'spin-install');
+        await fs.mkdir(spinInstallDir, { recursive: true });
+        // Change to temp directory for installation
+        const originalDir = process.cwd();
+        process.chdir(spinInstallDir);
+        try {
+            // Install Spin CLI (downloads to current directory)
+            await execExports.exec('bash', [
+                '-c',
+                'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
+            ]);
+            // The spin binary should now be in the current directory
+            const spinBinaryPath = path.join(spinInstallDir, 'spin');
+            // Create a proper tool cache directory
+            const spinDir = path.join(tempDir, 'spin-cli');
+            await fs.mkdir(spinDir, { recursive: true });
+            // Move spin to the tool directory
+            const finalSpinPath = path.join(spinDir, 'spin');
+            await fs.rename(spinBinaryPath, finalSpinPath);
+            await fs.chmod(finalSpinPath, '755');
+            // Add to PATH using GitHub Actions method
+            coreExports.addPath(spinDir);
+            // Verify installation
+            await execExports.exec('spin', ['--version']);
+            coreExports.info('✅ Spin installed successfully');
+        }
+        finally {
+            // Change back to original directory
+            process.chdir(originalDir);
+        }
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -29992,19 +30015,20 @@ async function installWkg() {
         const wkgVersion = '0.11.0';
         const wkgUrl = `https://github.com/bytecodealliance/wasm-pkg-tools/releases/download/v${wkgVersion}/wkg-${wkgPlatform}`;
         coreExports.info(`Downloading wkg from: ${wkgUrl}`);
-        // Download wkg binary
+        // Download wkg binary using tool-cache
         const downloadPath = await toolCacheExports.downloadTool(wkgUrl);
-        // Create ~/.local/bin if it doesn't exist
-        const localBinDir = path.join(process.env.HOME || '', '.local', 'bin');
-        await fs.mkdir(localBinDir, { recursive: true });
-        // Move to ~/.local/bin/wkg
-        const wkgPath = path.join(localBinDir, 'wkg');
+        // Create a directory for wkg in temp
+        const tempDir = process.env.RUNNER_TEMP || '/tmp';
+        const wkgDir = path.join(tempDir, 'wkg-cli');
+        await fs.mkdir(wkgDir, { recursive: true });
+        // Move to the tool directory
+        const wkgPath = path.join(wkgDir, 'wkg');
         await fs.copyFile(downloadPath, wkgPath);
         await fs.chmod(wkgPath, '755');
-        // Add to PATH
-        coreExports.addPath(localBinDir);
+        // Add to PATH using GitHub Actions method
+        coreExports.addPath(wkgDir);
         // Verify installation
-        await execExports.exec(wkgPath, ['--version']);
+        await execExports.exec('wkg', ['--version']);
         coreExports.info('✅ wkg installed successfully');
     }
     catch (error) {

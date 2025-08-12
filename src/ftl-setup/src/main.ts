@@ -91,16 +91,44 @@ async function installSpin(): Promise<void> {
       // Spin not found, proceed with installation
     }
 
-    // Install Spin CLI
-    // Use bash -c to handle the pipe properly
-    await exec.exec('bash', [
-      '-c',
-      'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
-    ])
+    // Install Spin CLI to temp directory first
+    const tempDir = process.env.RUNNER_TEMP || '/tmp'
+    const spinInstallDir = path.join(tempDir, 'spin-install')
+    await fs.mkdir(spinInstallDir, { recursive: true })
 
-    // Verify installation
-    await exec.exec('spin', ['--version'])
-    core.info('✅ Spin installed successfully')
+    // Change to temp directory for installation
+    const originalDir = process.cwd()
+    process.chdir(spinInstallDir)
+
+    try {
+      // Install Spin CLI (downloads to current directory)
+      await exec.exec('bash', [
+        '-c',
+        'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
+      ])
+
+      // The spin binary should now be in the current directory
+      const spinBinaryPath = path.join(spinInstallDir, 'spin')
+
+      // Create a proper tool cache directory
+      const spinDir = path.join(tempDir, 'spin-cli')
+      await fs.mkdir(spinDir, { recursive: true })
+
+      // Move spin to the tool directory
+      const finalSpinPath = path.join(spinDir, 'spin')
+      await fs.rename(spinBinaryPath, finalSpinPath)
+      await fs.chmod(finalSpinPath, '755')
+
+      // Add to PATH using GitHub Actions method
+      core.addPath(spinDir)
+
+      // Verify installation
+      await exec.exec('spin', ['--version'])
+      core.info('✅ Spin installed successfully')
+    } finally {
+      // Change back to original directory
+      process.chdir(originalDir)
+    }
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
@@ -142,23 +170,24 @@ async function installWkg(): Promise<void> {
 
     core.info(`Downloading wkg from: ${wkgUrl}`)
 
-    // Download wkg binary
+    // Download wkg binary using tool-cache
     const downloadPath = await tc.downloadTool(wkgUrl)
 
-    // Create ~/.local/bin if it doesn't exist
-    const localBinDir = path.join(process.env.HOME || '', '.local', 'bin')
-    await fs.mkdir(localBinDir, { recursive: true })
+    // Create a directory for wkg in temp
+    const tempDir = process.env.RUNNER_TEMP || '/tmp'
+    const wkgDir = path.join(tempDir, 'wkg-cli')
+    await fs.mkdir(wkgDir, { recursive: true })
 
-    // Move to ~/.local/bin/wkg
-    const wkgPath = path.join(localBinDir, 'wkg')
+    // Move to the tool directory
+    const wkgPath = path.join(wkgDir, 'wkg')
     await fs.copyFile(downloadPath, wkgPath)
     await fs.chmod(wkgPath, '755')
 
-    // Add to PATH
-    core.addPath(localBinDir)
+    // Add to PATH using GitHub Actions method
+    core.addPath(wkgDir)
 
     // Verify installation
-    await exec.exec(wkgPath, ['--version'])
+    await exec.exec('wkg', ['--version'])
     core.info('✅ wkg installed successfully')
   } catch (error) {
     const errorMessage =
