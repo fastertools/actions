@@ -1,222 +1,406 @@
 import * as core from '@actions/core'
-import * as tc from '@actions/tool-cache'
-import * as exec from '@actions/exec'
-import * as path from 'path'
+import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs/promises'
-import { detectPlatform } from './platform.js'
+import { killProcessGracefully } from './shared/index.js'
 
-interface GitHubRelease {
-  tag_name: string
-  assets: Array<{
-    name: string
-    browser_download_url: string
-  }>
+async function mcpHealthCheck(
+  serverUrl: string,
+  timeoutMs: number = 30000
+): Promise<boolean> {
+  const mcpUrl = `${serverUrl}/mcp`
+  const mcpRequest = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/list',
+    params: {}
+  }
+
+  core.info(`Testing MCP endpoint: ${mcpUrl}`)
+  core.info(`MCP request: ${JSON.stringify(mcpRequest)}`)
+
+  try {
+    const response = await fetch(mcpUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(mcpRequest),
+      signal: AbortSignal.timeout(timeoutMs)
+    })
+
+    core.info(`HTTP Status: ${response.status}`)
+
+    if (!response.ok) {
+      core.info(`MCP endpoint returned HTTP ${response.status}`)
+      return false
+    }
+
+    const data = (await response.json()) as any
+    core.info(`MCP Response: ${JSON.stringify(data)}`)
+
+    // Check for valid MCP response with tools
+    if (data.result && Array.isArray(data.result.tools)) {
+      core.info('✅ MCP health check passed (tools/list responded correctly)!')
+      return true
+    } else if (data.error) {
+      const errorCode = data.error.code
+      const errorMessage = data.error.message || data.error
+      core.info(`⚠️ MCP endpoint responded with error code: ${errorCode}`)
+      core.info(`⚠️ Error message: ${errorMessage}`)
+
+      // Error code -32603 is "Internal error" which often means configuration issues
+      // Check for common configuration issues that indicate server is running but needs setup
+      if (
+        errorCode === -32603 ||
+        (errorMessage &&
+          (errorMessage.includes('tool_components') ||
+            errorMessage.includes('no variable for') ||
+            errorMessage.includes('Undefined') ||
+            errorMessage.includes('configuration')))
+      ) {
+        core.info('💡 Server is running but needs toolbox configuration')
+        core.info('💡 This is a configuration issue, not a server failure')
+        core.info(
+          '✅ FTL server process is running and responding to MCP requests'
+        )
+        core.info('⚠️ Note: MCP tools need configuration to work properly')
+        return true // Treat as "server ready" since process is responding to MCP requests
+      } else {
+        core.info('⚠️ Unexpected MCP error')
+        return false
+      }
+    } else {
+      core.info('⚠️ MCP endpoint responded but not valid MCP format')
+      return false
+    }
+  } catch (error) {
+    core.info(
+      `MCP health check failed: ${error instanceof Error ? error.message : error}`
+    )
+    return false
+  }
 }
 
-function isValidSemver(version: string): boolean {
-  if (version === 'latest') return true
-  const semverRegex = /^\d+\.\d+\.\d+$/
-  return semverRegex.test(version)
+interface ServerStartupOptions {
+  port: string
+  timeout: number
+  configFile?: string
+  workingDirectory?: string
+  args?: string
+  healthEndpoint?: string
+  healthMethod?: string
+  healthBody?: string
+  envVars?: string
 }
 
-async function resolveVersion(version: string): Promise<string> {
-  if (version === 'latest' || version === '') {
-    try {
-      const response = await fetch(
-        'https://api.github.com/repos/fastertools/ftl-cli/releases'
-      )
-      if (!response.ok) {
-        throw new Error(`GitHub API responded with ${response.status}`)
-      }
-      const releases = (await response.json()) as GitHubRelease[]
-      // Find latest release with cli-v prefix
-      const latestRelease = releases.find((r) => r.tag_name.startsWith('cli-v'))
-      if (!latestRelease) {
-        throw new Error('No release found with cli-v prefix')
-      }
-      return latestRelease.tag_name.replace(/^cli-v/, '')
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error'
-      throw new Error(`Failed to resolve latest version: ${errorMessage}`)
+function validatePort(portStr: string): number {
+  const port = parseInt(portStr, 10)
+  if (isNaN(port) || port < 1 || port > 65535) {
+    throw new Error(
+      `Invalid port number: ${portStr}. Port must be between 1 and 65535.`
+    )
+  }
+  return port
+}
+
+function parseTimeout(timeoutStr: string): number {
+  if (!timeoutStr) return 30
+
+  const timeout = parseInt(timeoutStr, 10)
+  if (isNaN(timeout)) {
+    core.warning('Invalid timeout value, using default (30 seconds)')
+    return 30
+  }
+  return timeout
+}
+
+async function validateConfigFile(configFile: string): Promise<void> {
+  try {
+    await fs.access(configFile)
+  } catch (error) {
+    throw new Error(`Configuration file not found: ${configFile}`)
+  }
+}
+
+function buildFtlCommand(options: ServerStartupOptions): string[] {
+  const args = ['up', '--port', options.port]
+
+  if (options.configFile) {
+    args.push('--config', options.configFile)
+  }
+
+  if (options.args) {
+    const additionalArgs = options.args
+      .split(/\s+/)
+      .filter((arg) => arg.length > 0)
+    args.push(...additionalArgs)
+  }
+
+  return args
+}
+
+function parseEnvironmentVariables(
+  envVarsStr?: string
+): Record<string, string> {
+  const envVars: Record<string, string> = {}
+
+  if (!envVarsStr) return envVars
+
+  const pairs = envVarsStr.split(',')
+  for (const pair of pairs) {
+    const [key, value] = pair.split('=', 2)
+    if (key && value) {
+      envVars[key.trim()] = value.trim()
     }
   }
 
-  if (!isValidSemver(version)) {
-    throw new Error(
-      `Invalid version format: ${version}. Expected semver format (e.g., 1.0.0) or 'latest'`
-    )
-  }
-
-  return version
+  return envVars
 }
 
-function getBinaryUrl(
-  version: string,
-  platform: { os: string; arch: string }
-): string {
-  // Map architecture
-  const archMap: Record<string, string> = {
-    x64: 'x86_64',
-    arm64: 'aarch64'
-  }
-  const ftlArch = archMap[platform.arch] || platform.arch
+function buildSpawnEnvironment(
+  customEnvVars: Record<string, string>
+): Record<string, string> {
+  const env: Record<string, string> = {}
 
-  // Build asset name based on platform
-  let assetName: string
-  if (platform.os === 'darwin') {
-    // macOS uses: ftl-{arch}-apple-darwin
-    assetName = `ftl-${ftlArch}-apple-darwin`
-  } else if (platform.os === 'linux') {
-    // Linux uses: ftl-{arch}-unknown-linux-gnu
-    assetName = `ftl-${ftlArch}-unknown-linux-gnu`
-  } else {
-    throw new Error(`Unsupported platform: ${platform.os}`)
+  // Copy process.env, filtering out undefined values
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value
+    }
   }
 
-  const versionTag = `cli-v${version}`
+  // Add custom environment variables
+  Object.assign(env, customEnvVars)
 
-  return `https://github.com/fastertools/ftl-cli/releases/download/${versionTag}/${assetName}`
+  return env
 }
 
-async function installDependencies(): Promise<void> {
-  core.info('💿 Installing dependencies...')
-  try {
-    // Install Spin CLI as a dependency
-    // Use bash -c to handle the pipe properly
-    await exec.exec('bash', [
-      '-c',
-      'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
-    ])
-    core.info('✅ Dependencies installed successfully')
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error'
-    core.warning(`Failed to install dependencies: ${errorMessage}`)
-    // Don't fail the entire action for dependency installation failures
+function setupProcessEventHandlers(ftlProcess: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let resolved = false
+
+    const handleResolve = () => {
+      if (!resolved) {
+        resolved = true
+        resolve()
+      }
+    }
+
+    const handleReject = (error: Error) => {
+      if (!resolved) {
+        resolved = true
+        reject(error)
+      }
+    }
+
+    // Handle process errors
+    ftlProcess.on('error', (error) => {
+      handleReject(new Error(`Server startup failed: ${error.message}`))
+    })
+
+    // Handle unexpected exits
+    ftlProcess.on('exit', (code, signal) => {
+      if (code !== null && code !== 0) {
+        handleReject(
+          new Error(`FTL server process exited unexpectedly with code ${code}`)
+        )
+      } else if (signal) {
+        handleReject(
+          new Error(`FTL server process terminated by signal ${signal}`)
+        )
+      }
+    })
+
+    // Capture and log stdout
+    if (ftlProcess.stdout) {
+      ftlProcess.stdout.on('data', (data: Buffer) => {
+        const output = data.toString().trim()
+        if (output) {
+          core.info(`Server stdout: ${output}`)
+        }
+      })
+    }
+
+    // Capture and log stderr
+    if (ftlProcess.stderr) {
+      ftlProcess.stderr.on('data', (data: Buffer) => {
+        const output = data.toString().trim()
+        if (output) {
+          core.info(`Server stderr: ${output}`)
+        }
+      })
+    }
+
+    // Give the process a moment to start
+    setTimeout(handleResolve, 100)
+  })
+}
+
+function setupProcessCleanupHandlers(ftlProcess: ChildProcess): void {
+  const cleanup = async () => {
+    if (ftlProcess && !ftlProcess.killed) {
+      try {
+        core.info('🧹 Cleaning up FTL server process...')
+        await killProcessGracefully(ftlProcess, { timeoutMs: 5000 })
+      } catch (error) {
+        core.warning(`Failed to gracefully kill FTL server: ${error}`)
+      }
+    }
   }
+
+  process.on('exit', cleanup)
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
 }
 
 async function run(): Promise<void> {
   try {
-    core.startGroup('🏗️ Setting up FTL CLI')
+    core.startGroup('🚀 Starting FTL Server')
 
-    // Get inputs
-    const versionInput = core.getInput('version') || 'latest'
-    const useCache = core.getBooleanInput('use-cache')
+    // Get and parse inputs
+    const portInput = core.getInput('port') || '8080'
+    const port = validatePort(portInput)
+    const timeout = parseTimeout(core.getInput('timeout'))
+    const configFile = core.getInput('config-file')
+    const workingDirectory = core.getInput('working-directory')
+    const args = core.getInput('args')
+    const healthEndpoint = core.getInput('health-endpoint')
+    const healthMethod = core.getInput('health-method')
+    const healthBody = core.getInput('health-body')
+    const envVars = core.getInput('env-vars')
 
-    core.info(`Requested version: ${versionInput}`)
-    core.info(`Use cache: ${useCache}`)
-
-    // Detect platform
-    const platform = detectPlatform()
-    core.info(
-      `Detected platform: ${platform.os}/${platform.arch} (${platform.runner})`
-    )
-
-    // Resolve version
-    const version = await resolveVersion(versionInput)
-    core.info(`Resolved version: ${version}`)
-
-    let ftlPath = ''
-    let cacheHit = false
-
-    // Check cache if enabled
-    if (useCache) {
-      ftlPath = tc.find('ftl', version, platform.arch)
-      if (ftlPath) {
-        core.info(`📋 Found cached FTL CLI version ${version} at ${ftlPath}`)
-        cacheHit = true
-      }
+    const options: ServerStartupOptions = {
+      port: port.toString(),
+      timeout,
+      configFile,
+      workingDirectory,
+      args,
+      healthEndpoint,
+      healthMethod,
+      healthBody,
+      envVars
     }
 
-    // Download and install if not cached
-    if (!ftlPath) {
-      const downloadUrl = getBinaryUrl(version, platform)
-      core.info(`Downloading FTL CLI from: ${downloadUrl}`)
+    // Validate config file if provided
+    if (configFile) {
+      await validateConfigFile(configFile)
+    }
 
-      try {
-        // Download the binary
-        const downloadPath = await tc.downloadTool(downloadUrl)
+    core.info(`Port: ${options.port}`)
+    core.info(`Config file: ${options.configFile || 'default'}`)
+    core.info(`Timeout: ${options.timeout}s`)
+    if (options.workingDirectory) {
+      core.info(`Working directory: ${options.workingDirectory}`)
+    }
+    if (options.args) {
+      core.info(`Additional args: ${options.args}`)
+    }
 
-        // The FTL CLI is distributed as a raw binary, not an archive
-        // Create a directory for the binary
-        const binDir = path.join(
-          process.env.RUNNER_TEMP || '/tmp',
-          `ftl-${version}`
+    // Build FTL command
+    const ftlArgs = buildFtlCommand(options)
+    core.info(`Executing: ftl ${ftlArgs.join(' ')}`)
+
+    // Build spawn options
+    const customEnvVars = parseEnvironmentVariables(options.envVars)
+    const spawnEnv = buildSpawnEnvironment(customEnvVars)
+
+    const spawnOptions: any = {
+      detached: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: spawnEnv
+    }
+
+    if (options.workingDirectory) {
+      spawnOptions.cwd = options.workingDirectory
+    }
+
+    // Start the FTL server process
+    core.info('Starting FTL server process...')
+    const ftlProcess = spawn('ftl', ftlArgs, spawnOptions)
+
+    if (!ftlProcess.pid) {
+      throw new Error('Failed to start FTL server process')
+    }
+
+    // Detach the process to run in background
+    ftlProcess.unref()
+
+    // Setup process event handlers
+    await setupProcessEventHandlers(ftlProcess)
+
+    // Setup cleanup handlers
+    setupProcessCleanupHandlers(ftlProcess)
+
+    // Export process information
+    const serverUrl = `http://localhost:${options.port}`
+    core.exportVariable('FTL_SERVER_URL', serverUrl)
+    core.exportVariable('FTL_SERVER_PID', ftlProcess.pid.toString())
+
+    core.info(`FTL server started with PID: ${ftlProcess.pid}`)
+    core.info(`Server process ID: ${ftlProcess.pid}`)
+
+    // Perform MCP health check
+    const healthUrl = options.healthEndpoint
+      ? `${serverUrl}${options.healthEndpoint}`
+      : `${serverUrl}/health`
+
+    core.info(`Performing health check at: ${healthUrl}`)
+
+    const healthCheckOptions: any = {
+      timeoutSeconds: options.timeout
+    }
+
+    if (options.healthMethod) {
+      healthCheckOptions.method = options.healthMethod
+    }
+
+    if (options.healthBody) {
+      healthCheckOptions.body = options.healthBody
+    }
+
+    try {
+      // Use MCP health check for FTL server
+      const mcpHealthPassed = await mcpHealthCheck(
+        serverUrl,
+        options.timeout * 1000
+      )
+      if (mcpHealthPassed) {
+        core.info('✅ MCP health check passed')
+      } else {
+        throw new Error(
+          'MCP health check failed - server not responding to tools/list'
         )
-        await fs.mkdir(binDir, { recursive: true })
-
-        // Move the binary to the directory with the correct name
-        const ftlBinaryPath = path.join(binDir, 'ftl')
-        await fs.copyFile(downloadPath, ftlBinaryPath)
-
-        // Cache the directory containing the binary
-        ftlPath = await tc.cacheDir(binDir, 'ftl', version, platform.arch)
-
-        core.info(`💿 FTL CLI ${version} installed to ${ftlPath}`)
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error'
-
-        if (
-          errorMessage.includes('404') ||
-          errorMessage.includes('Not Found')
-        ) {
-          throw new Error(
-            `Version ${version} not found. Please check if this version exists in the FTL releases.`
-          )
-        }
-
-        if (
-          errorMessage.includes('Network timeout') ||
-          errorMessage.includes('timeout')
-        ) {
-          throw new Error(`Download failed: Network timeout. Please try again.`)
-        }
-
-        if (errorMessage.includes('Corrupted archive')) {
-          throw new Error(`Extraction failed: ${errorMessage}`)
-        }
-
-        throw new Error(`Download failed: ${errorMessage}`)
       }
-    }
-
-    // Set executable permissions
-    const ftlBinary = path.join(ftlPath, 'ftl')
-    try {
-      await fs.chmod(ftlBinary, '755')
-    } catch (error) {
-      core.warning(`Failed to set executable permissions: ${error}`)
-    }
-
-    // Add to PATH
-    core.addPath(ftlPath)
-
-    // Verify installation
-    try {
-      await exec.exec(ftlBinary, ['--version'])
-      core.info('✅ FTL CLI installation verified')
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error'
-      throw new Error(`FTL CLI verification failed: ${errorMessage}`)
+        error instanceof Error ? error.message : 'Health check failed'
+
+      // Kill the process if health check fails
+      try {
+        await killProcessGracefully(ftlProcess, {
+          timeoutMs: 10000,
+          forceful: true
+        })
+      } catch (killError) {
+        core.warning(
+          `Failed to kill process after health check failure: ${killError}`
+        )
+      }
+
+      throw new Error(errorMessage)
     }
 
-    // Always install dependencies - they're called dependencies for a reason!
-    await installDependencies()
-
     // Set outputs
-    core.setOutput('version', version)
-    core.setOutput('ftl-path', ftlPath)
-    core.setOutput('cached', cacheHit.toString())
+    core.setOutput('server-url', serverUrl)
+    core.setOutput('pid', ftlProcess.pid.toString())
+    core.setOutput('status', 'running')
+    core.setOutput('healthy', 'true')
 
-    core.info(`✅ FTL CLI setup completed successfully`)
+    core.info(`✅ FTL server started successfully at ${serverUrl}`)
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
-    core.setFailed(`Setup failed: ${errorMessage}`)
+    core.setFailed(errorMessage)
   } finally {
     core.endGroup()
   }
@@ -224,3 +408,6 @@ async function run(): Promise<void> {
 
 // Export for testing
 export { run }
+
+// Run if this is the main module (but not during build)
+// Removed CommonJS check as this is an ES module

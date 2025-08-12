@@ -23,7 +23,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "bundle": "npm run format:write && npm run package && mv dist ../../setup-ftl-js/dist",
+    "bundle": "npm run format:write && npm run package && mv dist ../../ftl-server-up/dist",
     "ci-test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest",
     "coverage": "npx make-coverage-badge --output-path ./badges/coverage.svg",
     "format:write": "npx prettier --write .",
