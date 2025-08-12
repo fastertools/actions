@@ -11,11 +11,6 @@ inputs:
     required: false
     default: 'latest'
   
-  install-dependencies:
-    description: 'Install dependencies (Spin, wkg, Docker) automatically'
-    required: false
-    default: 'true'
-  
   cache-dependencies:
     description: 'Cache installed dependencies'
     required: false
@@ -56,7 +51,6 @@ runs:
         # Validate inputs
         validate_inputs() {
           version="${{ inputs.version }}"
-          install_deps="${{ inputs.install-dependencies }}"
           cache_deps="${{ inputs.cache-dependencies }}"
           debug_mode="${{ inputs.debug }}"
           
@@ -68,7 +62,7 @@ runs:
           fi
           
           # Boolean validation
-          for input_var in "install_deps:$install_deps" "cache_deps:$cache_deps" "debug_mode:$debug_mode"; do
+          for input_var in "cache_deps:$cache_deps" "debug_mode:$debug_mode"; do
             name=${input_var%:*}
             value=${input_var#*:}
             case "$value" in
@@ -120,8 +114,8 @@ runs:
       run: |
         set -euo pipefail
         
-        # Create cache key based on OS, version, and dependencies flag
-        CACHE_KEY="ftl-cli-${{ runner.os }}-${{ inputs.version }}-deps-${{ inputs.install-dependencies }}"
+        # Create cache key based on OS and version
+        CACHE_KEY="ftl-cli-${{ runner.os }}-${{ inputs.version }}-with-deps"
         echo "cache-key=${CACHE_KEY}" >> $GITHUB_OUTPUT
 
     - name: Cache FTL CLI and dependencies
@@ -144,7 +138,7 @@ runs:
           ftl-cli-${{ runner.os }}-
 
     - name: Set up Docker Buildx
-      if: inputs.install-dependencies == 'true' && steps.cache.outputs.cache-hit != 'true'
+      if: steps.cache.outputs.cache-hit != 'true'
       uses: docker/setup-buildx-action@v3
 
     - name: Install FTL CLI
@@ -365,7 +359,7 @@ runs:
         end_group
 
     - name: Install Spin
-      if: inputs.install-dependencies == 'true' && steps.cache.outputs.cache-hit != 'true'
+      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -528,7 +522,7 @@ runs:
         echo "::endgroup::"
 
     - name: Install wkg
-      if: inputs.install-dependencies == 'true' && steps.cache.outputs.cache-hit != 'true'
+      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -782,9 +776,8 @@ runs:
           echo "ftl-version=unknown" >> "$GITHUB_OUTPUT"
         fi
         
-        # Verify dependencies if requested
-        if [ "${{ inputs.install-dependencies }}" = "true" ]; then
-          log_step "Verifying dependencies"
+        # Verify dependencies
+        log_step "Verifying dependencies"
           
           # Check Spin
           if command -v spin >/dev/null 2>&1; then
@@ -830,9 +823,6 @@ runs:
           else
             log_info "Docker not installed (this is optional)"
           fi
-        else
-          log_info "Dependency installation was disabled, skipping dependency verification"
-        fi
         
         # Final PATH verification
         log_step "Final PATH verification"
@@ -861,7 +851,7 @@ runs:
         
         echo "::group::📋 Installation Summary"
         echo "✅ FTL CLI Version: ${{ steps.verify.outputs.ftl-version }}"
-        echo "✅ Dependencies Installed: ${{ inputs.install-dependencies }}"
+        echo "✅ Dependencies: Installed (Spin, wkg, Docker check)"
         echo "✅ Cached: ${{ inputs.cache-dependencies }}"
         echo "✅ Debug Mode: ${{ inputs.debug }}"
         echo "✅ Runner: ${{ runner.os }}/${{ runner.arch }}"
@@ -874,7 +864,7 @@ runs:
         ## 📋 FTL CLI Installation Summary
         
         ✅ **FTL CLI Version**: \`${{ steps.verify.outputs.ftl-version }}\`  
-        ✅ **Dependencies Installed**: ${{ inputs.install-dependencies }}  
+        ✅ **Dependencies**: Installed (Spin, wkg, Docker check)  
         ✅ **Cached**: ${{ inputs.cache-dependencies }}  
         ✅ **Debug Mode**: ${{ inputs.debug }}  
         ✅ **Runner Platform**: ${{ runner.os }}/${{ runner.arch }}  

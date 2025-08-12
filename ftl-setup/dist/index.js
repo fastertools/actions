@@ -29933,22 +29933,125 @@ function getBinaryUrl(version, platform) {
     const versionTag = `cli-v${version}`;
     return `https://github.com/fastertools/ftl-cli/releases/download/${versionTag}/${assetName}`;
 }
-async function installDependencies() {
-    coreExports.info('💿 Installing dependencies...');
+async function installSpin() {
+    coreExports.info('📦 Installing Spin WebAssembly Runtime...');
     try {
-        // Install Spin CLI as a dependency
+        // Check if Spin is already installed
+        try {
+            await execExports.exec('spin', ['--version']);
+            coreExports.info('✅ Spin already installed');
+            return;
+        }
+        catch {
+            // Spin not found, proceed with installation
+        }
+        // Install Spin CLI
         // Use bash -c to handle the pipe properly
         await execExports.exec('bash', [
             '-c',
             'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
         ]);
-        coreExports.info('✅ Dependencies installed successfully');
+        // Verify installation
+        await execExports.exec('spin', ['--version']);
+        coreExports.info('✅ Spin installed successfully');
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        coreExports.warning(`Failed to install dependencies: ${errorMessage}`);
+        coreExports.warning(`Failed to install Spin: ${errorMessage}`);
         // Don't fail the entire action for dependency installation failures
     }
+}
+async function installWkg() {
+    coreExports.info('📦 Installing wkg (WebAssembly Package Tool)...');
+    try {
+        // Check if wkg is already installed
+        try {
+            await execExports.exec('wkg', ['--version']);
+            coreExports.info('✅ wkg already installed');
+            return;
+        }
+        catch {
+            // wkg not found, proceed with installation
+        }
+        // Detect platform
+        const platform = detectPlatform();
+        let wkgPlatform = '';
+        if (platform.os === 'linux') {
+            wkgPlatform =
+                platform.arch === 'x64'
+                    ? 'x86_64-unknown-linux-gnu'
+                    : 'aarch64-unknown-linux-gnu';
+        }
+        else if (platform.os === 'darwin') {
+            wkgPlatform =
+                platform.arch === 'x64' ? 'x86_64-apple-darwin' : 'aarch64-apple-darwin';
+        }
+        else {
+            throw new Error(`Unsupported platform for wkg: ${platform.os}`);
+        }
+        const wkgVersion = '0.11.0';
+        const wkgUrl = `https://github.com/bytecodealliance/wasm-pkg-tools/releases/download/v${wkgVersion}/wkg-${wkgPlatform}`;
+        coreExports.info(`Downloading wkg from: ${wkgUrl}`);
+        // Download wkg binary
+        const downloadPath = await toolCacheExports.downloadTool(wkgUrl);
+        // Create ~/.local/bin if it doesn't exist
+        const localBinDir = path.join(process.env.HOME || '', '.local', 'bin');
+        await fs.mkdir(localBinDir, { recursive: true });
+        // Move to ~/.local/bin/wkg
+        const wkgPath = path.join(localBinDir, 'wkg');
+        await fs.copyFile(downloadPath, wkgPath);
+        await fs.chmod(wkgPath, '755');
+        // Add to PATH
+        coreExports.addPath(localBinDir);
+        // Verify installation
+        await execExports.exec(wkgPath, ['--version']);
+        coreExports.info('✅ wkg installed successfully');
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        coreExports.warning(`Failed to install wkg: ${errorMessage}`);
+        // Try cargo install as fallback
+        try {
+            coreExports.info('Attempting to install wkg via cargo...');
+            await execExports.exec('cargo', ['install', 'wkg']);
+            coreExports.info('✅ wkg installed via cargo');
+        }
+        catch {
+            coreExports.warning('Failed to install wkg via cargo fallback');
+        }
+    }
+}
+async function setupDocker() {
+    coreExports.info('🐳 Setting up Docker...');
+    try {
+        // Check if Docker is already available
+        try {
+            await execExports.exec('docker', ['--version']);
+            coreExports.info('✅ Docker already available');
+            // Check for Docker Buildx
+            try {
+                await execExports.exec('docker', ['buildx', 'version']);
+                coreExports.info('✅ Docker Buildx already available');
+            }
+            catch {
+                coreExports.info('Docker Buildx not available, but Docker is present');
+            }
+            return;
+        }
+        catch {
+            coreExports.info('Docker not found, this is optional for FTL');
+        }
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        coreExports.info(`Docker setup note: ${errorMessage}`);
+    }
+}
+async function installDependencies() {
+    coreExports.info('💿 Installing all dependencies...');
+    // Install all dependencies in parallel where possible
+    await Promise.all([installSpin(), installWkg(), setupDocker()]);
+    coreExports.info('✅ All dependencies processed');
 }
 async function run() {
     try {
@@ -30027,7 +30130,7 @@ async function run() {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`FTL CLI verification failed: ${errorMessage}`);
         }
-        // Always install dependencies - they're called dependencies for a reason!
+        // Install all required dependencies (Spin, wkg, Docker check)
         await installDependencies();
         // Set outputs
         coreExports.setOutput('version', version);

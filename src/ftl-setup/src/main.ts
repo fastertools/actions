@@ -79,22 +79,135 @@ function getBinaryUrl(
   return `https://github.com/fastertools/ftl-cli/releases/download/${versionTag}/${assetName}`
 }
 
-async function installDependencies(): Promise<void> {
-  core.info('💿 Installing dependencies...')
+async function installSpin(): Promise<void> {
+  core.info('📦 Installing Spin WebAssembly Runtime...')
   try {
-    // Install Spin CLI as a dependency
+    // Check if Spin is already installed
+    try {
+      await exec.exec('spin', ['--version'])
+      core.info('✅ Spin already installed')
+      return
+    } catch {
+      // Spin not found, proceed with installation
+    }
+
+    // Install Spin CLI
     // Use bash -c to handle the pipe properly
     await exec.exec('bash', [
       '-c',
       'curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash'
     ])
-    core.info('✅ Dependencies installed successfully')
+
+    // Verify installation
+    await exec.exec('spin', ['--version'])
+    core.info('✅ Spin installed successfully')
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
-    core.warning(`Failed to install dependencies: ${errorMessage}`)
+    core.warning(`Failed to install Spin: ${errorMessage}`)
     // Don't fail the entire action for dependency installation failures
   }
+}
+
+async function installWkg(): Promise<void> {
+  core.info('📦 Installing wkg (WebAssembly Package Tool)...')
+  try {
+    // Check if wkg is already installed
+    try {
+      await exec.exec('wkg', ['--version'])
+      core.info('✅ wkg already installed')
+      return
+    } catch {
+      // wkg not found, proceed with installation
+    }
+
+    // Detect platform
+    const platform = detectPlatform()
+    let wkgPlatform = ''
+
+    if (platform.os === 'linux') {
+      wkgPlatform =
+        platform.arch === 'x64'
+          ? 'x86_64-unknown-linux-gnu'
+          : 'aarch64-unknown-linux-gnu'
+    } else if (platform.os === 'darwin') {
+      wkgPlatform =
+        platform.arch === 'x64' ? 'x86_64-apple-darwin' : 'aarch64-apple-darwin'
+    } else {
+      throw new Error(`Unsupported platform for wkg: ${platform.os}`)
+    }
+
+    const wkgVersion = '0.11.0'
+    const wkgUrl = `https://github.com/bytecodealliance/wasm-pkg-tools/releases/download/v${wkgVersion}/wkg-${wkgPlatform}`
+
+    core.info(`Downloading wkg from: ${wkgUrl}`)
+
+    // Download wkg binary
+    const downloadPath = await tc.downloadTool(wkgUrl)
+
+    // Create ~/.local/bin if it doesn't exist
+    const localBinDir = path.join(process.env.HOME || '', '.local', 'bin')
+    await fs.mkdir(localBinDir, { recursive: true })
+
+    // Move to ~/.local/bin/wkg
+    const wkgPath = path.join(localBinDir, 'wkg')
+    await fs.copyFile(downloadPath, wkgPath)
+    await fs.chmod(wkgPath, '755')
+
+    // Add to PATH
+    core.addPath(localBinDir)
+
+    // Verify installation
+    await exec.exec(wkgPath, ['--version'])
+    core.info('✅ wkg installed successfully')
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error'
+    core.warning(`Failed to install wkg: ${errorMessage}`)
+    // Try cargo install as fallback
+    try {
+      core.info('Attempting to install wkg via cargo...')
+      await exec.exec('cargo', ['install', 'wkg'])
+      core.info('✅ wkg installed via cargo')
+    } catch {
+      core.warning('Failed to install wkg via cargo fallback')
+    }
+  }
+}
+
+async function setupDocker(): Promise<void> {
+  core.info('🐳 Setting up Docker...')
+  try {
+    // Check if Docker is already available
+    try {
+      await exec.exec('docker', ['--version'])
+      core.info('✅ Docker already available')
+
+      // Check for Docker Buildx
+      try {
+        await exec.exec('docker', ['buildx', 'version'])
+        core.info('✅ Docker Buildx already available')
+      } catch {
+        core.info('Docker Buildx not available, but Docker is present')
+      }
+      return
+    } catch {
+      core.info('Docker not found, this is optional for FTL')
+    }
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error'
+    core.info(`Docker setup note: ${errorMessage}`)
+  }
+}
+
+async function installDependencies(): Promise<void> {
+  core.info('💿 Installing all dependencies...')
+
+  // Install all dependencies in parallel where possible
+  await Promise.all([installSpin(), installWkg(), setupDocker()])
+
+  core.info('✅ All dependencies processed')
 }
 
 async function run(): Promise<void> {
@@ -204,7 +317,7 @@ async function run(): Promise<void> {
       throw new Error(`FTL CLI verification failed: ${errorMessage}`)
     }
 
-    // Always install dependencies - they're called dependencies for a reason!
+    // Install all required dependencies (Spin, wkg, Docker check)
     await installDependencies()
 
     // Set outputs

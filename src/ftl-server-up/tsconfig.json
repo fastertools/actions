@@ -13,5 +13,5 @@
     "dist",
     "setup-ftl-js/node_modules"
   ],
-  "include": ["src"]
+  "include": ["src", "../ftl-setup/src/index.ts"]
 }
