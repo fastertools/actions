@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2021",
-    "lib": ["es2021"],
+    "lib": ["es2021", "dom"],
     "module": "commonjs",
     "moduleResolution": "node",
     "declaration": false,
@@ -19,7 +19,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
   },
   "exclude": [
     "node_modules",

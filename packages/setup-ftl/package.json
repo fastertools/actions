@@ -1,10 +1,10 @@
 {
   "name": "@fastertools/setup-ftl",
-  "version": "2.0.0-alpha.1",
+  "version": "1.0.0-alpha.1",
   "description": "GitHub Action to install and setup FTL CLI",
   "main": "dist/index.js",
   "scripts": {
-    "build": "ncc build src/main.ts -o dist",
+    "build": "ncc build src/main.ts -o ../../setup-ftl-js/dist/",
     "test": "jest"
   },
   "dependencies": {
@@ -13,6 +13,7 @@
     "@actions/tool-cache": "^2.0.1"
   },
   "devDependencies": {
+    "@types/node": "^24.2.1",
     "@vercel/ncc": "^0.38.0",
     "typescript": "^5.1.0"
   }
