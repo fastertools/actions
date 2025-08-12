@@ -14,7 +14,7 @@ inputs:
   use-cache:
     description: 'Enable GitHub Actions tool cache'
     required: false
-    default: 'true'
+    default: true
   install-dependencies:
     description: 'Install additional dependencies (docker, spin, etc.)'
     required: false
