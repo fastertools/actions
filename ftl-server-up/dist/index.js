@@ -1,7 +1,8 @@
 import require$$0 from 'os';
 import require$$0$1 from 'crypto';
 import require$$1 from 'fs';
-import require$$1$5 from 'path';
+import * as path from 'path';
+import path__default from 'path';
 import require$$2 from 'http';
 import require$$3 from 'https';
 import require$$0$4 from 'net';
@@ -25,7 +26,7 @@ import require$$1$4 from 'url';
 import require$$3$1 from 'zlib';
 import require$$6 from 'string_decoder';
 import require$$0$9 from 'diagnostics_channel';
-import require$$2$2, { spawn } from 'child_process';
+import require$$2$2 from 'child_process';
 import require$$6$1 from 'timers';
 import * as fs from 'fs/promises';
 
@@ -25507,7 +25508,7 @@ function requirePathUtils () {
 	};
 	Object.defineProperty(pathUtils, "__esModule", { value: true });
 	pathUtils.toPlatformPath = pathUtils.toWin32Path = pathUtils.toPosixPath = void 0;
-	const path = __importStar(require$$1$5);
+	const path = __importStar(path__default);
 	/**
 	 * toPosixPath converts the given path to the posix form. On Windows, \\ will be
 	 * replaced with /.
@@ -25594,7 +25595,7 @@ function requireIoUtil () {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.getCmdPath = exports.tryGetExecutablePath = exports.isRooted = exports.isDirectory = exports.exists = exports.READONLY = exports.UV_FS_O_EXLOCK = exports.IS_WINDOWS = exports.unlink = exports.symlink = exports.stat = exports.rmdir = exports.rm = exports.rename = exports.readlink = exports.readdir = exports.open = exports.mkdir = exports.lstat = exports.copyFile = exports.chmod = void 0;
 		const fs = __importStar(require$$1);
-		const path = __importStar(require$$1$5);
+		const path = __importStar(path__default);
 		_a = fs.promises
 		// export const {open} = 'fs'
 		, exports.chmod = _a.chmod, exports.copyFile = _a.copyFile, exports.lstat = _a.lstat, exports.mkdir = _a.mkdir, exports.open = _a.open, exports.readdir = _a.readdir, exports.readlink = _a.readlink, exports.rename = _a.rename, exports.rm = _a.rm, exports.rmdir = _a.rmdir, exports.stat = _a.stat, exports.symlink = _a.symlink, exports.unlink = _a.unlink;
@@ -25784,7 +25785,7 @@ function requireIo () {
 	Object.defineProperty(io, "__esModule", { value: true });
 	io.findInPath = io.which = io.mkdirP = io.rmRF = io.mv = io.cp = void 0;
 	const assert_1 = require$$0$3;
-	const path = __importStar(require$$1$5);
+	const path = __importStar(path__default);
 	const ioUtil = __importStar(requireIoUtil());
 	/**
 	 * Copies a file or folder.
@@ -26092,7 +26093,7 @@ function requireToolrunner () {
 	const os = __importStar(require$$0);
 	const events = __importStar(require$$4);
 	const child = __importStar(require$$2$2);
-	const path = __importStar(require$$1$5);
+	const path = __importStar(path__default);
 	const io = __importStar(requireIo());
 	const ioUtil = __importStar(requireIoUtil());
 	const timers_1 = require$$6$1;
@@ -26936,7 +26937,7 @@ function requireCore () {
 		const file_command_1 = requireFileCommand();
 		const utils_1 = requireUtils$1();
 		const os = __importStar(require$$0);
-		const path = __importStar(require$$1$5);
+		const path = __importStar(path__default);
 		const oidc_utils_1 = requireOidcUtils();
 		/**
 		 * The code to exit an action
@@ -27247,6 +27248,8 @@ function requireCore () {
 
 var coreExports = requireCore();
 
+var execExports = requireExec();
+
 async function killProcessGracefully(process, options = {}) {
     const { timeoutMs = 10000, forceful = true } = options;
     // Check if process is already terminated
@@ -27418,56 +27421,7 @@ function buildSpawnEnvironment(customEnvVars) {
     Object.assign(env, customEnvVars);
     return env;
 }
-function setupProcessEventHandlers(ftlProcess) {
-    return new Promise((resolve, reject) => {
-        let resolved = false;
-        const handleResolve = () => {
-            if (!resolved) {
-                resolved = true;
-                resolve();
-            }
-        };
-        const handleReject = (error) => {
-            if (!resolved) {
-                resolved = true;
-                reject(error);
-            }
-        };
-        // Handle process errors
-        ftlProcess.on('error', (error) => {
-            handleReject(new Error(`Server startup failed: ${error.message}`));
-        });
-        // Handle unexpected exits
-        ftlProcess.on('exit', (code, signal) => {
-            if (code !== null && code !== 0) {
-                handleReject(new Error(`FTL server process exited unexpectedly with code ${code}`));
-            }
-            else if (signal) {
-                handleReject(new Error(`FTL server process terminated by signal ${signal}`));
-            }
-        });
-        // Capture and log stdout
-        if (ftlProcess.stdout) {
-            ftlProcess.stdout.on('data', (data) => {
-                const output = data.toString().trim();
-                if (output) {
-                    coreExports.info(`Server stdout: ${output}`);
-                }
-            });
-        }
-        // Capture and log stderr
-        if (ftlProcess.stderr) {
-            ftlProcess.stderr.on('data', (data) => {
-                const output = data.toString().trim();
-                if (output) {
-                    coreExports.info(`Server stderr: ${output}`);
-                }
-            });
-        }
-        // Give the process a moment to start
-        setTimeout(handleResolve, 100);
-    });
-}
+// Removed setupProcessEventHandlers as we're using a background process
 function setupProcessCleanupHandlers(ftlProcess) {
     const cleanup = async () => {
         if (ftlProcess && !ftlProcess.killed) {
@@ -27522,26 +27476,69 @@ async function run() {
         // Build spawn options
         const customEnvVars = parseEnvironmentVariables(options.envVars);
         const spawnEnv = buildSpawnEnvironment(customEnvVars);
+        // Write FTL command to a script file for proper backgrounding
+        const tempDir = process.env.RUNNER_TEMP || '/tmp';
+        const scriptPath = path.join(tempDir, 'ftl-server.sh');
+        const logPath = path.join(tempDir, 'ftl-server.log');
+        const pidPath = path.join(tempDir, 'ftl-server.pid');
+        // Create the startup script
+        const scriptContent = `#!/bin/bash
+ftl ${ftlArgs.join(' ')} > "${logPath}" 2>&1 &
+echo $! > "${pidPath}"
+`;
+        await fs.writeFile(scriptPath, scriptContent);
+        await fs.chmod(scriptPath, '755');
+        coreExports.info('Starting FTL server process in background...');
+        coreExports.info(`Executing: ftl ${ftlArgs.join(' ')}`);
+        // Execute the script
         const spawnOptions = {
-            detached: true,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: spawnEnv
+            stdio: 'ignore',
+            env: spawnEnv,
+            detached: false // Don't detach the bash script itself
         };
         if (options.workingDirectory) {
             spawnOptions.cwd = options.workingDirectory;
         }
-        // Start the FTL server process
-        coreExports.info('Starting FTL server process...');
-        const ftlProcess = spawn('ftl', ftlArgs, spawnOptions);
-        if (!ftlProcess.pid) {
-            throw new Error('Failed to start FTL server process');
+        // Run the script which will start FTL in the background
+        await execExports.exec('bash', [scriptPath], {
+            env: spawnEnv,
+            cwd: options.workingDirectory
+        });
+        // Read the PID from the file
+        await new Promise((resolve) => setTimeout(resolve, 500)); // Give it a moment to write the PID
+        const pidContent = await fs.readFile(pidPath, 'utf-8');
+        const ftlPid = parseInt(pidContent.trim(), 10);
+        if (!ftlPid || isNaN(ftlPid)) {
+            throw new Error('Failed to get FTL server PID');
         }
-        // Detach the process to run in background
-        ftlProcess.unref();
-        // Setup process event handlers
-        await setupProcessEventHandlers(ftlProcess);
-        // Setup cleanup handlers
+        // Create a mock process object for compatibility
+        const ftlProcess = {
+            pid: ftlPid,
+            killed: false,
+            kill: (signal) => {
+                try {
+                    process.kill(ftlPid, signal || 'SIGTERM');
+                    return true;
+                }
+                catch {
+                    return false;
+                }
+            }
+        };
+        // We don't need event handlers for the background process
+        // Just setup cleanup handlers
         setupProcessCleanupHandlers(ftlProcess);
+        // Monitor the log file for a moment to catch early errors
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        try {
+            const logContent = await fs.readFile(logPath, 'utf-8');
+            if (logContent.includes('error') || logContent.includes('Error')) {
+                coreExports.warning(`Server log contains errors: ${logContent.substring(0, 500)}`);
+            }
+        }
+        catch {
+            // Log file might not exist yet, that's ok
+        }
         // Export process information
         const serverUrl = `http://localhost:${options.port}`;
         coreExports.exportVariable('FTL_SERVER_URL', serverUrl);

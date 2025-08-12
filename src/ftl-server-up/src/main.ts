@@ -1,6 +1,8 @@
 import * as core from '@actions/core'
+import * as exec from '@actions/exec'
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs/promises'
+import * as path from 'path'
 import { killProcessGracefully } from './shared/index.js'
 
 async function mcpHealthCheck(
@@ -172,66 +174,7 @@ function buildSpawnEnvironment(
   return env
 }
 
-function setupProcessEventHandlers(ftlProcess: ChildProcess): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let resolved = false
-
-    const handleResolve = () => {
-      if (!resolved) {
-        resolved = true
-        resolve()
-      }
-    }
-
-    const handleReject = (error: Error) => {
-      if (!resolved) {
-        resolved = true
-        reject(error)
-      }
-    }
-
-    // Handle process errors
-    ftlProcess.on('error', (error) => {
-      handleReject(new Error(`Server startup failed: ${error.message}`))
-    })
-
-    // Handle unexpected exits
-    ftlProcess.on('exit', (code, signal) => {
-      if (code !== null && code !== 0) {
-        handleReject(
-          new Error(`FTL server process exited unexpectedly with code ${code}`)
-        )
-      } else if (signal) {
-        handleReject(
-          new Error(`FTL server process terminated by signal ${signal}`)
-        )
-      }
-    })
-
-    // Capture and log stdout
-    if (ftlProcess.stdout) {
-      ftlProcess.stdout.on('data', (data: Buffer) => {
-        const output = data.toString().trim()
-        if (output) {
-          core.info(`Server stdout: ${output}`)
-        }
-      })
-    }
-
-    // Capture and log stderr
-    if (ftlProcess.stderr) {
-      ftlProcess.stderr.on('data', (data: Buffer) => {
-        const output = data.toString().trim()
-        if (output) {
-          core.info(`Server stderr: ${output}`)
-        }
-      })
-    }
-
-    // Give the process a moment to start
-    setTimeout(handleResolve, 100)
-  })
-}
+// Removed setupProcessEventHandlers as we're using a background process
 
 function setupProcessCleanupHandlers(ftlProcess: ChildProcess): void {
   const cleanup = async () => {
@@ -295,32 +238,79 @@ async function run(): Promise<void> {
     const customEnvVars = parseEnvironmentVariables(options.envVars)
     const spawnEnv = buildSpawnEnvironment(customEnvVars)
 
+    // Write FTL command to a script file for proper backgrounding
+    const tempDir = process.env.RUNNER_TEMP || '/tmp'
+    const scriptPath = path.join(tempDir, 'ftl-server.sh')
+    const logPath = path.join(tempDir, 'ftl-server.log')
+    const pidPath = path.join(tempDir, 'ftl-server.pid')
+
+    // Create the startup script
+    const scriptContent = `#!/bin/bash
+ftl ${ftlArgs.join(' ')} > "${logPath}" 2>&1 &
+echo $! > "${pidPath}"
+`
+    await fs.writeFile(scriptPath, scriptContent)
+    await fs.chmod(scriptPath, '755')
+
+    core.info('Starting FTL server process in background...')
+    core.info(`Executing: ftl ${ftlArgs.join(' ')}`)
+
+    // Execute the script
     const spawnOptions: any = {
-      detached: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: spawnEnv
+      stdio: 'ignore',
+      env: spawnEnv,
+      detached: false // Don't detach the bash script itself
     }
 
     if (options.workingDirectory) {
       spawnOptions.cwd = options.workingDirectory
     }
 
-    // Start the FTL server process
-    core.info('Starting FTL server process...')
-    const ftlProcess = spawn('ftl', ftlArgs, spawnOptions)
+    // Run the script which will start FTL in the background
+    await exec.exec('bash', [scriptPath], {
+      env: spawnEnv,
+      cwd: options.workingDirectory
+    })
 
-    if (!ftlProcess.pid) {
-      throw new Error('Failed to start FTL server process')
+    // Read the PID from the file
+    await new Promise((resolve) => setTimeout(resolve, 500)) // Give it a moment to write the PID
+    const pidContent = await fs.readFile(pidPath, 'utf-8')
+    const ftlPid = parseInt(pidContent.trim(), 10)
+
+    if (!ftlPid || isNaN(ftlPid)) {
+      throw new Error('Failed to get FTL server PID')
     }
 
-    // Detach the process to run in background
-    ftlProcess.unref()
+    // Create a mock process object for compatibility
+    const ftlProcess = {
+      pid: ftlPid,
+      killed: false,
+      kill: (signal?: string) => {
+        try {
+          process.kill(ftlPid, (signal as any) || 'SIGTERM')
+          return true
+        } catch {
+          return false
+        }
+      }
+    } as any
 
-    // Setup process event handlers
-    await setupProcessEventHandlers(ftlProcess)
-
-    // Setup cleanup handlers
+    // We don't need event handlers for the background process
+    // Just setup cleanup handlers
     setupProcessCleanupHandlers(ftlProcess)
+
+    // Monitor the log file for a moment to catch early errors
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      const logContent = await fs.readFile(logPath, 'utf-8')
+      if (logContent.includes('error') || logContent.includes('Error')) {
+        core.warning(
+          `Server log contains errors: ${logContent.substring(0, 500)}`
+        )
+      }
+    } catch {
+      // Log file might not exist yet, that's ok
+    }
 
     // Export process information
     const serverUrl = `http://localhost:${options.port}`

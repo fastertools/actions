@@ -2,7 +2,8 @@
 
 # Build all actions
 build:
-	pnpm run build
+	cd /Users/coreyryan/data/mashh/actions/src/ftl-server-up  && pnpm run bundle 
+	cd /Users/coreyryan/data/mashh/actions/src/ftl-setup && pnpm run bundle
 
 # Run TypeScript type checking
 typecheck:
