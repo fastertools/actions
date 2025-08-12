@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken, type OAuthToken } from '@fastertools/shared'
+import { obtainOAuthToken, cacheOAuthToken, getCachedOAuthToken } from '@fastertools/shared'
 
 interface DeploymentResponse {
   deployment_id: string
@@ -82,8 +82,8 @@ async function executeDeployment(project: string, environment: string, token: st
     if (!response.ok) {
       let errorMessage = `${response.status} ${response.statusText}`
       try {
-        const errorData = await response.json()
-        if (errorData.error) {
+        const errorData = await response.json() as any
+        if (errorData && errorData.error) {
           errorMessage += ` - ${errorData.error}`
         }
       } catch {

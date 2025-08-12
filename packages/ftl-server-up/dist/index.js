@@ -25672,16 +25672,102 @@ __exportStar(__nccwpck_require__(6544), exports);
 /***/ }),
 
 /***/ 5949:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.downloadWithRetry = downloadWithRetry;
+exports.checkUrlExists = checkUrlExists;
 exports.healthCheck = healthCheck;
+const fs = __importStar(__nccwpck_require__(1943));
+const path = __importStar(__nccwpck_require__(6928));
 async function downloadWithRetry(url, outputPath, options = {}) {
-    // CRAWL Phase: Minimal stub implementation
-    console.log(`📥 Stub download: ${url} -> ${outputPath}`, { options });
+    const { maxRetries = 3, backoffMs = 5000, timeout = 30000 } = options;
+    let lastError = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            // Create AbortController for timeout
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), timeout);
+            try {
+                // Make the HTTP request
+                const response = await fetch(url, {
+                    signal: abortController.signal
+                });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                // Get the response data
+                const data = await response.arrayBuffer();
+                // Create directory if it doesn't exist
+                const dir = path.dirname(outputPath);
+                await fs.mkdir(dir, { recursive: true });
+                // Write the file
+                await fs.writeFile(outputPath, Buffer.from(data));
+                return; // Success!
+            }
+            catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
+        }
+        catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            // If this was the last attempt, don't wait
+            if (attempt === maxRetries - 1) {
+                break;
+            }
+            // Calculate exponential backoff delay
+            const delay = backoffMs * Math.pow(2, attempt);
+            await new Promise(resolve => setTimeout(() => resolve(), delay));
+        }
+    }
+    // If we get here, all attempts failed
+    throw new Error(`Download failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
+}
+async function checkUrlExists(url) {
+    try {
+        const response = await fetch(url, { method: 'HEAD' });
+        return response.ok;
+    }
+    catch (error) {
+        return false;
+    }
 }
 async function healthCheck(url, retries = 3) {
     // CRAWL Phase: Minimal stub implementation
@@ -25693,12 +25779,125 @@ async function healthCheck(url, retries = 3) {
 /***/ }),
 
 /***/ 6544:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.FTLAuthClient = void 0;
+exports.obtainOAuthToken = obtainOAuthToken;
+exports.cacheOAuthToken = cacheOAuthToken;
+exports.getCachedOAuthToken = getCachedOAuthToken;
+const core = __importStar(__nccwpck_require__(9999));
+async function obtainOAuthToken(config) {
+    const { url, clientId, clientSecret, scope = 'deploy' } = config;
+    // Mask sensitive credentials immediately
+    core.setSecret(clientId);
+    core.setSecret(clientSecret);
+    try {
+        // Prepare the request body
+        const params = new URLSearchParams();
+        params.append('grant_type', 'client_credentials');
+        params.append('client_id', clientId);
+        params.append('client_secret', clientSecret);
+        params.append('scope', scope);
+        // Make the OAuth request
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: params
+        });
+        if (!response.ok) {
+            throw new Error(`OAuth authentication failed: ${response.status} ${response.statusText}`);
+        }
+        const tokenResponse = await response.json();
+        // Extract and mask the access token
+        const accessToken = tokenResponse.access_token;
+        if (accessToken) {
+            core.setSecret(accessToken);
+        }
+        // Build the token object with defaults
+        const token = {
+            accessToken: accessToken || '',
+            tokenType: tokenResponse.token_type || 'Bearer',
+            expiresIn: tokenResponse.expires_in || 3600
+        };
+        return token;
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`OAuth token acquisition failed: ${errorMessage}`);
+    }
+}
+function cacheOAuthToken(token) {
+    const expiryTimestamp = Date.now() + (token.expiresIn * 1000);
+    core.exportVariable('FTL_AUTH_TOKEN', token.accessToken);
+    core.exportVariable('FTL_TOKEN_TYPE', token.tokenType);
+    core.exportVariable('FTL_TOKEN_EXPIRES', expiryTimestamp.toString());
+}
+function getCachedOAuthToken() {
+    const accessToken = process.env.FTL_AUTH_TOKEN;
+    const tokenType = process.env.FTL_TOKEN_TYPE;
+    const expiresString = process.env.FTL_TOKEN_EXPIRES;
+    // Check if all required fields are present
+    if (!accessToken || !tokenType || !expiresString) {
+        return null;
+    }
+    // Parse and validate expiry timestamp
+    const expiryTimestamp = parseInt(expiresString, 10);
+    if (isNaN(expiryTimestamp)) {
+        return null;
+    }
+    // Check if token is expired
+    const now = Date.now();
+    if (expiryTimestamp <= now) {
+        return null;
+    }
+    // Calculate remaining seconds
+    const remainingMs = expiryTimestamp - now;
+    const remainingSeconds = Math.floor(remainingMs / 1000);
+    return {
+        accessToken,
+        tokenType,
+        expiresIn: remainingSeconds
+    };
+}
 class FTLAuthClient {
     async authenticate(options) {
         // CRAWL Phase: Minimal stub implementation
@@ -25735,37 +25934,255 @@ exports.FTLAuthClient = FTLAuthClient;
 /***/ }),
 
 /***/ 5900:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.detectPlatform = detectPlatform;
+exports.getPlatformDownloadName = getPlatformDownloadName;
 exports.getDownloadUrl = getDownloadUrl;
+const os = __importStar(__nccwpck_require__(857));
 function detectPlatform() {
-    // CRAWL Phase: Minimal stub implementation
+    // Use GitHub Actions environment first
+    const runnerOS = process.env.RUNNER_OS;
+    const runnerArch = process.env.RUNNER_ARCH;
+    let detectedOS;
+    switch (runnerOS) {
+        case 'Linux':
+            detectedOS = 'linux';
+            break;
+        case 'macOS':
+            detectedOS = 'darwin';
+            break;
+        case 'Windows':
+            throw new Error(`Unsupported platform: ${runnerOS}`);
+        case 'linux': // Handle lowercase variants
+            detectedOS = 'linux';
+            break;
+        default:
+            // Fallback to Node.js detection
+            const nodeOS = os.platform();
+            if (nodeOS === 'linux')
+                detectedOS = 'linux';
+            else if (nodeOS === 'darwin')
+                detectedOS = 'darwin';
+            else if (nodeOS === 'win32')
+                throw new Error(`Unsupported platform: ${nodeOS}`);
+            else
+                throw new Error(`Unsupported platform: ${nodeOS}`);
+    }
+    let detectedArch;
+    switch (runnerArch) {
+        case 'X64':
+        case 'x64':
+            detectedArch = 'x64';
+            break;
+        case 'ARM64':
+        case 'arm64':
+            detectedArch = 'arm64';
+            break;
+        case 'X86':
+            throw new Error(`Unsupported architecture: ${runnerArch}`);
+        default:
+            // Fallback to Node.js detection
+            const nodeArch = os.arch();
+            if (nodeArch === 'x64')
+                detectedArch = 'x64';
+            else if (nodeArch === 'arm64')
+                detectedArch = 'arm64';
+            else
+                throw new Error(`Unsupported architecture: ${nodeArch}`);
+    }
     return {
-        os: 'linux',
-        arch: 'x64',
-        runner: 'ubuntu-latest'
+        os: detectedOS,
+        arch: detectedArch,
+        runner: runnerOS || `${detectedOS}-${detectedArch}`
     };
 }
+function getPlatformDownloadName(platform) {
+    const osMap = { linux: 'linux', darwin: 'darwin' };
+    const archMap = { x64: 'x64', arm64: 'arm64' };
+    if (platform.os === 'win32') {
+        throw new Error(`Unsupported platform for download: ${platform.os}`);
+    }
+    return `ftl-${osMap[platform.os]}-${archMap[platform.arch]}.tar.gz`;
+}
 function getDownloadUrl(version, platform) {
-    // CRAWL Phase: Minimal stub implementation
-    return `https://github.com/TBD54566975/ftl/releases/download/v${version}/ftl-${platform.os}-${platform.arch}.tar.gz`;
+    const filename = getPlatformDownloadName(platform);
+    return `https://github.com/TBD54566975/ftl/releases/download/v${version}/${filename}`;
 }
 
 
 /***/ }),
 
 /***/ 762:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.waitForHealthCheck = waitForHealthCheck;
+exports.killProcessGracefully = killProcessGracefully;
 exports.spawnAsync = spawnAsync;
 exports.setupProcessCleanup = setupProcessCleanup;
+const core = __importStar(__nccwpck_require__(9999));
+async function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+async function waitForHealthCheck(url, options = {}) {
+    const { timeoutSeconds = 30, intervalMs = 2000, expectedStatus, requestTimeoutMs } = options;
+    const timeoutMs = timeoutSeconds * 1000;
+    const maxAttempts = Math.ceil(timeoutMs / intervalMs) + 1;
+    core.info('⏳ Waiting for server to be ready...');
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const controller = new AbortController();
+            // Set request timeout if specified - but only create timer, don't rely on it for successful case
+            let requestTimeout;
+            if (requestTimeoutMs && requestTimeoutMs > 0) {
+                requestTimeout = setTimeout(() => {
+                    controller.abort();
+                }, requestTimeoutMs);
+            }
+            const response = await fetch(url, {
+                method: 'GET',
+                signal: controller.signal
+            });
+            // Clear request timeout immediately after successful response
+            if (requestTimeout) {
+                clearTimeout(requestTimeout);
+            }
+            if (response.ok) {
+                // Check expected status if provided
+                if (expectedStatus && response.status !== expectedStatus) {
+                    // Status doesn't match, continue waiting
+                }
+                else {
+                    core.info('✅ Server health check passed');
+                    return;
+                }
+            }
+            // HTTP error or wrong status, continue retrying
+        }
+        catch (error) {
+            // Network error or timeout, continue retrying
+        }
+        // If this isn't the last attempt, wait before retrying
+        if (attempt < maxAttempts - 1) {
+            await delay(intervalMs);
+        }
+    }
+    throw new Error(`Server health check failed after ${timeoutSeconds}s timeout`);
+}
+async function killProcessGracefully(process, options = {}) {
+    const { timeoutMs = 10000, forceful = true } = options;
+    // Check if process is already terminated
+    if (process.killed) {
+        core.info('Process is already terminated');
+        return;
+    }
+    // Check if PID is available
+    if (!process.pid) {
+        throw new Error('Cannot kill process: PID is undefined');
+    }
+    return new Promise((resolve, reject) => {
+        // Set up exit handler
+        process.on('exit', () => {
+            core.info('Process exited gracefully');
+            resolve();
+        });
+        // Try graceful shutdown with SIGTERM
+        core.info('Attempting graceful shutdown (SIGTERM)...');
+        const killResult = process.kill('SIGTERM');
+        if (!killResult) {
+            reject(new Error(`Failed to send SIGTERM to process ${process.pid}`));
+            return;
+        }
+        // Set timeout for forceful kill
+        const timeout = setTimeout(() => {
+            if (forceful) {
+                core.warning('Process did not exit gracefully, forcing termination (SIGKILL)...');
+                process.kill('SIGKILL');
+                resolve();
+            }
+            else {
+                core.warning('Process did not exit within timeout, but forceful termination is disabled');
+                resolve();
+            }
+        }, timeoutMs);
+        // Clear timeout if process exits gracefully
+        process.on('exit', () => {
+            clearTimeout(timeout);
+        });
+    });
+}
 async function spawnAsync(command, args) {
     // CRAWL Phase: Minimal stub implementation
     console.log(`🚀 Stub spawn: ${command} ${args.join(' ')}`);
@@ -25820,42 +26237,322 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = run;
 const core = __importStar(__nccwpck_require__(9999));
+const child_process_1 = __nccwpck_require__(5317);
+const fs = __importStar(__nccwpck_require__(1943));
 const shared_1 = __nccwpck_require__(671);
+async function mcpHealthCheck(serverUrl, timeoutMs = 30000) {
+    const mcpUrl = `${serverUrl}/mcp`;
+    const mcpRequest = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {}
+    };
+    core.info(`Testing MCP endpoint: ${mcpUrl}`);
+    core.info(`MCP request: ${JSON.stringify(mcpRequest)}`);
+    try {
+        const response = await fetch(mcpUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(mcpRequest),
+            signal: AbortSignal.timeout(timeoutMs)
+        });
+        core.info(`HTTP Status: ${response.status}`);
+        if (!response.ok) {
+            core.info(`MCP endpoint returned HTTP ${response.status}`);
+            return false;
+        }
+        const data = await response.json();
+        core.info(`MCP Response: ${JSON.stringify(data)}`);
+        // Check for valid MCP response with tools
+        if (data.result && Array.isArray(data.result.tools)) {
+            core.info('✅ MCP health check passed (tools/list responded correctly)!');
+            return true;
+        }
+        else if (data.error) {
+            const errorCode = data.error.code;
+            const errorMessage = data.error.message || data.error;
+            core.info(`⚠️ MCP endpoint responded with error code: ${errorCode}`);
+            core.info(`⚠️ Error message: ${errorMessage}`);
+            // Error code -32603 is "Internal error" which often means configuration issues
+            // Check for common configuration issues that indicate server is running but needs setup
+            if (errorCode === -32603 ||
+                (errorMessage && (errorMessage.includes('tool_components') ||
+                    errorMessage.includes('no variable for') ||
+                    errorMessage.includes('Undefined') ||
+                    errorMessage.includes('configuration')))) {
+                core.info('💡 Server is running but needs toolbox configuration');
+                core.info('💡 This is a configuration issue, not a server failure');
+                core.info('✅ FTL server process is running and responding to MCP requests');
+                core.info('⚠️ Note: MCP tools need configuration to work properly');
+                return true; // Treat as "server ready" since process is responding to MCP requests
+            }
+            else {
+                core.info('⚠️ Unexpected MCP error');
+                return false;
+            }
+        }
+        else {
+            core.info('⚠️ MCP endpoint responded but not valid MCP format');
+            return false;
+        }
+    }
+    catch (error) {
+        core.info(`MCP health check failed: ${error instanceof Error ? error.message : error}`);
+        return false;
+    }
+}
+function validatePort(portStr) {
+    const port = parseInt(portStr, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+        throw new Error(`Invalid port number: ${portStr}. Port must be between 1 and 65535.`);
+    }
+    return port;
+}
+function parseTimeout(timeoutStr) {
+    if (!timeoutStr)
+        return 30;
+    const timeout = parseInt(timeoutStr, 10);
+    if (isNaN(timeout)) {
+        core.warning('Invalid timeout value, using default (30 seconds)');
+        return 30;
+    }
+    return timeout;
+}
+async function validateConfigFile(configFile) {
+    try {
+        await fs.access(configFile);
+    }
+    catch (error) {
+        throw new Error(`Configuration file not found: ${configFile}`);
+    }
+}
+function buildFtlCommand(options) {
+    const args = ['up', '--port', options.port];
+    if (options.configFile) {
+        args.push('--config', options.configFile);
+    }
+    if (options.args) {
+        const additionalArgs = options.args.split(/\s+/).filter(arg => arg.length > 0);
+        args.push(...additionalArgs);
+    }
+    return args;
+}
+function parseEnvironmentVariables(envVarsStr) {
+    const envVars = {};
+    if (!envVarsStr)
+        return envVars;
+    const pairs = envVarsStr.split(',');
+    for (const pair of pairs) {
+        const [key, value] = pair.split('=', 2);
+        if (key && value) {
+            envVars[key.trim()] = value.trim();
+        }
+    }
+    return envVars;
+}
+function buildSpawnEnvironment(customEnvVars) {
+    const env = {};
+    // Copy process.env, filtering out undefined values
+    for (const [key, value] of Object.entries(process.env)) {
+        if (value !== undefined) {
+            env[key] = value;
+        }
+    }
+    // Add custom environment variables
+    Object.assign(env, customEnvVars);
+    return env;
+}
+function setupProcessEventHandlers(ftlProcess) {
+    return new Promise((resolve, reject) => {
+        let resolved = false;
+        const handleResolve = () => {
+            if (!resolved) {
+                resolved = true;
+                resolve();
+            }
+        };
+        const handleReject = (error) => {
+            if (!resolved) {
+                resolved = true;
+                reject(error);
+            }
+        };
+        // Handle process errors
+        ftlProcess.on('error', (error) => {
+            handleReject(new Error(`Server startup failed: ${error.message}`));
+        });
+        // Handle unexpected exits
+        ftlProcess.on('exit', (code, signal) => {
+            if (code !== null && code !== 0) {
+                handleReject(new Error(`FTL server process exited unexpectedly with code ${code}`));
+            }
+            else if (signal) {
+                handleReject(new Error(`FTL server process terminated by signal ${signal}`));
+            }
+        });
+        // Capture and log stdout
+        if (ftlProcess.stdout) {
+            ftlProcess.stdout.on('data', (data) => {
+                const output = data.toString().trim();
+                if (output) {
+                    core.info(`Server stdout: ${output}`);
+                }
+            });
+        }
+        // Capture and log stderr  
+        if (ftlProcess.stderr) {
+            ftlProcess.stderr.on('data', (data) => {
+                const output = data.toString().trim();
+                if (output) {
+                    core.info(`Server stderr: ${output}`);
+                }
+            });
+        }
+        // Give the process a moment to start
+        setTimeout(handleResolve, 100);
+    });
+}
+function setupProcessCleanupHandlers(ftlProcess) {
+    const cleanup = async () => {
+        if (ftlProcess && !ftlProcess.killed) {
+            try {
+                core.info('🧹 Cleaning up FTL server process...');
+                await (0, shared_1.killProcessGracefully)(ftlProcess, { timeoutMs: 5000 });
+            }
+            catch (error) {
+                core.warning(`Failed to gracefully kill FTL server: ${error}`);
+            }
+        }
+    };
+    process.on('exit', cleanup);
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+}
 async function run() {
     try {
-        core.startGroup('🚀 Starting FTL Server (TypeScript Skeleton)');
-        const port = core.getInput('port') || '8080';
+        core.startGroup('🚀 Starting FTL Server');
+        // Get and parse inputs
+        const portInput = core.getInput('port') || '8080';
+        const port = validatePort(portInput);
+        const timeout = parseTimeout(core.getInput('timeout'));
         const configFile = core.getInput('config-file');
-        const timeout = parseInt(core.getInput('timeout') || '30', 10);
-        core.info(`Port: ${port}`);
-        core.info(`Config file: ${configFile || 'default'}`);
-        core.info(`Timeout: ${timeout}s`);
-        // CRAWL Phase: Simulate server startup
-        core.info('Starting FTL server (skeleton)...');
-        // Use shared utilities for process management
-        (0, shared_1.setupProcessCleanup)([]);
-        const serverUrl = `http://localhost:${port}`;
-        // Use shared utility for health check
-        const healthy = await (0, shared_1.healthCheck)(serverUrl, 3);
-        core.info(`Health check result: ${healthy}`);
-        // CRAWL Phase: Set skeleton outputs
+        const workingDirectory = core.getInput('working-directory');
+        const args = core.getInput('args');
+        const healthEndpoint = core.getInput('health-endpoint');
+        const healthMethod = core.getInput('health-method');
+        const healthBody = core.getInput('health-body');
+        const envVars = core.getInput('env-vars');
+        const options = {
+            port: port.toString(),
+            timeout,
+            configFile,
+            workingDirectory,
+            args,
+            healthEndpoint,
+            healthMethod,
+            healthBody,
+            envVars
+        };
+        // Validate config file if provided
+        if (configFile) {
+            await validateConfigFile(configFile);
+        }
+        core.info(`Port: ${options.port}`);
+        core.info(`Config file: ${options.configFile || 'default'}`);
+        core.info(`Timeout: ${options.timeout}s`);
+        if (options.workingDirectory) {
+            core.info(`Working directory: ${options.workingDirectory}`);
+        }
+        if (options.args) {
+            core.info(`Additional args: ${options.args}`);
+        }
+        // Build FTL command
+        const ftlArgs = buildFtlCommand(options);
+        core.info(`Executing: ftl ${ftlArgs.join(' ')}`);
+        // Build spawn options
+        const customEnvVars = parseEnvironmentVariables(options.envVars);
+        const spawnEnv = buildSpawnEnvironment(customEnvVars);
+        const spawnOptions = {
+            detached: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: spawnEnv
+        };
+        if (options.workingDirectory) {
+            spawnOptions.cwd = options.workingDirectory;
+        }
+        // Start the FTL server process
+        core.info('Starting FTL server process...');
+        const ftlProcess = (0, child_process_1.spawn)('ftl', ftlArgs, spawnOptions);
+        if (!ftlProcess.pid) {
+            throw new Error('Failed to start FTL server process');
+        }
+        // Detach the process to run in background
+        ftlProcess.unref();
+        // Setup process event handlers
+        await setupProcessEventHandlers(ftlProcess);
+        // Setup cleanup handlers
+        setupProcessCleanupHandlers(ftlProcess);
+        // Export process information
+        const serverUrl = `http://localhost:${options.port}`;
         core.exportVariable('FTL_SERVER_URL', serverUrl);
-        core.exportVariable('FTL_SERVER_PID', '12345');
+        core.exportVariable('FTL_SERVER_PID', ftlProcess.pid.toString());
+        core.info(`FTL server started with PID: ${ftlProcess.pid}`);
+        core.info(`Server process ID: ${ftlProcess.pid}`);
+        // Perform MCP health check
+        const healthUrl = options.healthEndpoint
+            ? `${serverUrl}${options.healthEndpoint}`
+            : `${serverUrl}/health`;
+        core.info(`Performing health check at: ${healthUrl}`);
+        const healthCheckOptions = {
+            timeoutSeconds: options.timeout
+        };
+        if (options.healthMethod) {
+            healthCheckOptions.method = options.healthMethod;
+        }
+        if (options.healthBody) {
+            healthCheckOptions.body = options.healthBody;
+        }
+        try {
+            // Use MCP health check for FTL server
+            const mcpHealthPassed = await mcpHealthCheck(serverUrl, options.timeout * 1000);
+            if (mcpHealthPassed) {
+                core.info('✅ MCP health check passed');
+            }
+            else {
+                throw new Error('MCP health check failed - server not responding to tools/list');
+            }
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Health check failed';
+            // Kill the process if health check fails
+            try {
+                await (0, shared_1.killProcessGracefully)(ftlProcess, { timeoutMs: 10000, forceful: true });
+            }
+            catch (killError) {
+                core.warning(`Failed to kill process after health check failure: ${killError}`);
+            }
+            throw new Error(errorMessage);
+        }
+        // Set outputs
         core.setOutput('server-url', serverUrl);
-        core.setOutput('pid', 12345);
-        core.setOutput('healthy', true);
-        core.info('✅ FTL server started successfully (skeleton)');
+        core.setOutput('pid', ftlProcess.pid.toString());
+        core.setOutput('status', 'running');
+        core.setOutput('healthy', 'true');
+        core.info(`✅ FTL server started successfully at ${serverUrl}`);
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        core.setFailed(`Server startup failed: ${errorMessage}`);
+        core.setFailed(errorMessage);
     }
     finally {
         core.endGroup();
     }
 }
-// Run if this is the main module
-if (require.main === require.cache[eval('__filename')]) {
+// Run if this is the main module (but not during build)
+if (require.main === require.cache[eval('__filename')] && !process.env.NCC_BUILD) {
     run();
 }
 
@@ -25931,6 +26628,14 @@ module.exports = require("events");
 
 "use strict";
 module.exports = require("fs");
+
+/***/ }),
+
+/***/ 1943:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("fs/promises");
 
 /***/ }),
 

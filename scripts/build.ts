@@ -6,9 +6,14 @@ function buildAction(name: string): void {
   console.log(`🔨 Building ${name}...`)
   
   try {
-    // Use ncc CLI to build the action
+    // Use ncc CLI to build the action with timeout
     const command = `npx ncc build packages/${name}/src/main.ts --out packages/${name}/dist --source-map --license licenses.txt`
-    execSync(command, { stdio: 'inherit' })
+    console.log(`Running: ${command}`)
+    execSync(command, { 
+      stdio: 'inherit',
+      timeout: 120000, // 2 minute timeout
+      env: { ...process.env, NCC_BUILD: 'true' }
+    })
     
     console.log(`✅ Built ${name} successfully`)
   } catch (error) {

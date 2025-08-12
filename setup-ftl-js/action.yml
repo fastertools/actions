@@ -15,10 +15,6 @@ inputs:
     description: 'Enable GitHub Actions tool cache'
     required: false
     default: 'true'
-  install-dependencies:
-    description: 'Install additional dependencies (docker, spin, etc.)'
-    required: false
-    default: 'false'
 
 outputs:
   ftl-path:

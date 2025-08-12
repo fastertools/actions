@@ -1,2 +1,6 @@
 .agent
 .claude
+
+*.pem
+spin
+spin.sig

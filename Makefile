@@ -14,7 +14,7 @@ test: test-setup test-server test-deploy test-auth
 # Test setup-ftl action
 test-setup:
 	@echo "🧪 Testing setup-ftl action..."
-	env INPUT_VERSION=latest INPUT_USE-CACHE=true node packages/setup-ftl/dist/index.js
+	env INPUT_VERSION=latest INPUT_USE-CACHE=false RUNNER_TEMP=/tmp RUNNER_TOOL_CACHE=/tmp/tool-cache node packages/setup-ftl/dist/index.js
 
 # Test ftl-server-up action
 test-server:

@@ -25672,16 +25672,102 @@ __exportStar(__nccwpck_require__(6544), exports);
 /***/ }),
 
 /***/ 5949:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.downloadWithRetry = downloadWithRetry;
+exports.checkUrlExists = checkUrlExists;
 exports.healthCheck = healthCheck;
+const fs = __importStar(__nccwpck_require__(1943));
+const path = __importStar(__nccwpck_require__(6928));
 async function downloadWithRetry(url, outputPath, options = {}) {
-    // CRAWL Phase: Minimal stub implementation
-    console.log(`📥 Stub download: ${url} -> ${outputPath}`, { options });
+    const { maxRetries = 3, backoffMs = 5000, timeout = 30000 } = options;
+    let lastError = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            // Create AbortController for timeout
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), timeout);
+            try {
+                // Make the HTTP request
+                const response = await fetch(url, {
+                    signal: abortController.signal
+                });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                // Get the response data
+                const data = await response.arrayBuffer();
+                // Create directory if it doesn't exist
+                const dir = path.dirname(outputPath);
+                await fs.mkdir(dir, { recursive: true });
+                // Write the file
+                await fs.writeFile(outputPath, Buffer.from(data));
+                return; // Success!
+            }
+            catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
+        }
+        catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            // If this was the last attempt, don't wait
+            if (attempt === maxRetries - 1) {
+                break;
+            }
+            // Calculate exponential backoff delay
+            const delay = backoffMs * Math.pow(2, attempt);
+            await new Promise(resolve => setTimeout(() => resolve(), delay));
+        }
+    }
+    // If we get here, all attempts failed
+    throw new Error(`Download failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
+}
+async function checkUrlExists(url) {
+    try {
+        const response = await fetch(url, { method: 'HEAD' });
+        return response.ok;
+    }
+    catch (error) {
+        return false;
+    }
 }
 async function healthCheck(url, retries = 3) {
     // CRAWL Phase: Minimal stub implementation
@@ -25693,12 +25779,125 @@ async function healthCheck(url, retries = 3) {
 /***/ }),
 
 /***/ 6544:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.FTLAuthClient = void 0;
+exports.obtainOAuthToken = obtainOAuthToken;
+exports.cacheOAuthToken = cacheOAuthToken;
+exports.getCachedOAuthToken = getCachedOAuthToken;
+const core = __importStar(__nccwpck_require__(9999));
+async function obtainOAuthToken(config) {
+    const { url, clientId, clientSecret, scope = 'deploy' } = config;
+    // Mask sensitive credentials immediately
+    core.setSecret(clientId);
+    core.setSecret(clientSecret);
+    try {
+        // Prepare the request body
+        const params = new URLSearchParams();
+        params.append('grant_type', 'client_credentials');
+        params.append('client_id', clientId);
+        params.append('client_secret', clientSecret);
+        params.append('scope', scope);
+        // Make the OAuth request
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: params
+        });
+        if (!response.ok) {
+            throw new Error(`OAuth authentication failed: ${response.status} ${response.statusText}`);
+        }
+        const tokenResponse = await response.json();
+        // Extract and mask the access token
+        const accessToken = tokenResponse.access_token;
+        if (accessToken) {
+            core.setSecret(accessToken);
+        }
+        // Build the token object with defaults
+        const token = {
+            accessToken: accessToken || '',
+            tokenType: tokenResponse.token_type || 'Bearer',
+            expiresIn: tokenResponse.expires_in || 3600
+        };
+        return token;
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`OAuth token acquisition failed: ${errorMessage}`);
+    }
+}
+function cacheOAuthToken(token) {
+    const expiryTimestamp = Date.now() + (token.expiresIn * 1000);
+    core.exportVariable('FTL_AUTH_TOKEN', token.accessToken);
+    core.exportVariable('FTL_TOKEN_TYPE', token.tokenType);
+    core.exportVariable('FTL_TOKEN_EXPIRES', expiryTimestamp.toString());
+}
+function getCachedOAuthToken() {
+    const accessToken = process.env.FTL_AUTH_TOKEN;
+    const tokenType = process.env.FTL_TOKEN_TYPE;
+    const expiresString = process.env.FTL_TOKEN_EXPIRES;
+    // Check if all required fields are present
+    if (!accessToken || !tokenType || !expiresString) {
+        return null;
+    }
+    // Parse and validate expiry timestamp
+    const expiryTimestamp = parseInt(expiresString, 10);
+    if (isNaN(expiryTimestamp)) {
+        return null;
+    }
+    // Check if token is expired
+    const now = Date.now();
+    if (expiryTimestamp <= now) {
+        return null;
+    }
+    // Calculate remaining seconds
+    const remainingMs = expiryTimestamp - now;
+    const remainingSeconds = Math.floor(remainingMs / 1000);
+    return {
+        accessToken,
+        tokenType,
+        expiresIn: remainingSeconds
+    };
+}
 class FTLAuthClient {
     async authenticate(options) {
         // CRAWL Phase: Minimal stub implementation
@@ -25735,37 +25934,255 @@ exports.FTLAuthClient = FTLAuthClient;
 /***/ }),
 
 /***/ 5900:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.detectPlatform = detectPlatform;
+exports.getPlatformDownloadName = getPlatformDownloadName;
 exports.getDownloadUrl = getDownloadUrl;
+const os = __importStar(__nccwpck_require__(857));
 function detectPlatform() {
-    // CRAWL Phase: Minimal stub implementation
+    // Use GitHub Actions environment first
+    const runnerOS = process.env.RUNNER_OS;
+    const runnerArch = process.env.RUNNER_ARCH;
+    let detectedOS;
+    switch (runnerOS) {
+        case 'Linux':
+            detectedOS = 'linux';
+            break;
+        case 'macOS':
+            detectedOS = 'darwin';
+            break;
+        case 'Windows':
+            throw new Error(`Unsupported platform: ${runnerOS}`);
+        case 'linux': // Handle lowercase variants
+            detectedOS = 'linux';
+            break;
+        default:
+            // Fallback to Node.js detection
+            const nodeOS = os.platform();
+            if (nodeOS === 'linux')
+                detectedOS = 'linux';
+            else if (nodeOS === 'darwin')
+                detectedOS = 'darwin';
+            else if (nodeOS === 'win32')
+                throw new Error(`Unsupported platform: ${nodeOS}`);
+            else
+                throw new Error(`Unsupported platform: ${nodeOS}`);
+    }
+    let detectedArch;
+    switch (runnerArch) {
+        case 'X64':
+        case 'x64':
+            detectedArch = 'x64';
+            break;
+        case 'ARM64':
+        case 'arm64':
+            detectedArch = 'arm64';
+            break;
+        case 'X86':
+            throw new Error(`Unsupported architecture: ${runnerArch}`);
+        default:
+            // Fallback to Node.js detection
+            const nodeArch = os.arch();
+            if (nodeArch === 'x64')
+                detectedArch = 'x64';
+            else if (nodeArch === 'arm64')
+                detectedArch = 'arm64';
+            else
+                throw new Error(`Unsupported architecture: ${nodeArch}`);
+    }
     return {
-        os: 'linux',
-        arch: 'x64',
-        runner: 'ubuntu-latest'
+        os: detectedOS,
+        arch: detectedArch,
+        runner: runnerOS || `${detectedOS}-${detectedArch}`
     };
 }
+function getPlatformDownloadName(platform) {
+    const osMap = { linux: 'linux', darwin: 'darwin' };
+    const archMap = { x64: 'x64', arm64: 'arm64' };
+    if (platform.os === 'win32') {
+        throw new Error(`Unsupported platform for download: ${platform.os}`);
+    }
+    return `ftl-${osMap[platform.os]}-${archMap[platform.arch]}.tar.gz`;
+}
 function getDownloadUrl(version, platform) {
-    // CRAWL Phase: Minimal stub implementation
-    return `https://github.com/TBD54566975/ftl/releases/download/v${version}/ftl-${platform.os}-${platform.arch}.tar.gz`;
+    const filename = getPlatformDownloadName(platform);
+    return `https://github.com/TBD54566975/ftl/releases/download/v${version}/${filename}`;
 }
 
 
 /***/ }),
 
 /***/ 762:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.waitForHealthCheck = waitForHealthCheck;
+exports.killProcessGracefully = killProcessGracefully;
 exports.spawnAsync = spawnAsync;
 exports.setupProcessCleanup = setupProcessCleanup;
+const core = __importStar(__nccwpck_require__(9999));
+async function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+async function waitForHealthCheck(url, options = {}) {
+    const { timeoutSeconds = 30, intervalMs = 2000, expectedStatus, requestTimeoutMs } = options;
+    const timeoutMs = timeoutSeconds * 1000;
+    const maxAttempts = Math.ceil(timeoutMs / intervalMs) + 1;
+    core.info('⏳ Waiting for server to be ready...');
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const controller = new AbortController();
+            // Set request timeout if specified - but only create timer, don't rely on it for successful case
+            let requestTimeout;
+            if (requestTimeoutMs && requestTimeoutMs > 0) {
+                requestTimeout = setTimeout(() => {
+                    controller.abort();
+                }, requestTimeoutMs);
+            }
+            const response = await fetch(url, {
+                method: 'GET',
+                signal: controller.signal
+            });
+            // Clear request timeout immediately after successful response
+            if (requestTimeout) {
+                clearTimeout(requestTimeout);
+            }
+            if (response.ok) {
+                // Check expected status if provided
+                if (expectedStatus && response.status !== expectedStatus) {
+                    // Status doesn't match, continue waiting
+                }
+                else {
+                    core.info('✅ Server health check passed');
+                    return;
+                }
+            }
+            // HTTP error or wrong status, continue retrying
+        }
+        catch (error) {
+            // Network error or timeout, continue retrying
+        }
+        // If this isn't the last attempt, wait before retrying
+        if (attempt < maxAttempts - 1) {
+            await delay(intervalMs);
+        }
+    }
+    throw new Error(`Server health check failed after ${timeoutSeconds}s timeout`);
+}
+async function killProcessGracefully(process, options = {}) {
+    const { timeoutMs = 10000, forceful = true } = options;
+    // Check if process is already terminated
+    if (process.killed) {
+        core.info('Process is already terminated');
+        return;
+    }
+    // Check if PID is available
+    if (!process.pid) {
+        throw new Error('Cannot kill process: PID is undefined');
+    }
+    return new Promise((resolve, reject) => {
+        // Set up exit handler
+        process.on('exit', () => {
+            core.info('Process exited gracefully');
+            resolve();
+        });
+        // Try graceful shutdown with SIGTERM
+        core.info('Attempting graceful shutdown (SIGTERM)...');
+        const killResult = process.kill('SIGTERM');
+        if (!killResult) {
+            reject(new Error(`Failed to send SIGTERM to process ${process.pid}`));
+            return;
+        }
+        // Set timeout for forceful kill
+        const timeout = setTimeout(() => {
+            if (forceful) {
+                core.warning('Process did not exit gracefully, forcing termination (SIGKILL)...');
+                process.kill('SIGKILL');
+                resolve();
+            }
+            else {
+                core.warning('Process did not exit within timeout, but forceful termination is disabled');
+                resolve();
+            }
+        }, timeoutMs);
+        // Clear timeout if process exits gracefully
+        process.on('exit', () => {
+            clearTimeout(timeout);
+        });
+    });
+}
 async function spawnAsync(command, args) {
     // CRAWL Phase: Minimal stub implementation
     console.log(`🚀 Stub spawn: ${command} ${args.join(' ')}`);
@@ -25821,43 +26238,189 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = run;
 const core = __importStar(__nccwpck_require__(9999));
 const shared_1 = __nccwpck_require__(671);
+async function getAuthToken(clientId, clientSecret) {
+    // First try to get cached token
+    const cachedToken = (0, shared_1.getCachedOAuthToken)();
+    if (cachedToken) {
+        return cachedToken.accessToken;
+    }
+    // If no cached token, try to obtain new one
+    if (clientId && clientSecret) {
+        const oauthUrl = process.env.FTL_OAUTH_URL || 'https://api.ftl.dev/oauth/token';
+        try {
+            const token = await (0, shared_1.obtainOAuthToken)({
+                url: oauthUrl,
+                clientId,
+                clientSecret,
+                scope: 'deploy'
+            });
+            // Cache the token for future use
+            (0, shared_1.cacheOAuthToken)(token);
+            return token.accessToken;
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Authentication failed: ${errorMessage}`);
+        }
+    }
+    throw new Error('Authentication required. Provide client-id/client-secret or use authenticate-ftl action first.');
+}
+async function executeDeployment(project, environment, token, options) {
+    const apiUrl = process.env.FTL_API_URL || 'https://api.ftl.dev';
+    const deployUrl = `${apiUrl}/projects/${project}/environments/${environment}/deploy`;
+    // Build request body
+    const body = {
+        project,
+        environment
+    };
+    // Add optional parameters
+    if (options.timeout) {
+        const timeoutNum = parseInt(options.timeout, 10);
+        if (!isNaN(timeoutNum)) {
+            body.timeout = timeoutNum;
+        }
+    }
+    if (options['config-file']) {
+        body.configFile = options['config-file'];
+    }
+    try {
+        const response = await fetch(deployUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        if (!response.ok) {
+            let errorMessage = `${response.status} ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                if (errorData && errorData.error) {
+                    errorMessage += ` - ${errorData.error}`;
+                }
+            }
+            catch {
+                // Ignore JSON parsing errors for error responses
+            }
+            throw new Error(`Deployment failed: ${errorMessage}`);
+        }
+        try {
+            return await response.json();
+        }
+        catch (error) {
+            throw new Error('Failed to parse deployment response: Invalid JSON');
+        }
+    }
+    catch (error) {
+        if (error instanceof Error && error.message.includes('Deployment failed:')) {
+            throw error; // Re-throw formatted deployment errors
+        }
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Deployment request failed: ${errorMessage}`);
+    }
+}
+async function waitForDeploymentCompletion(deploymentId, token, timeoutSeconds) {
+    const apiUrl = process.env.FTL_API_URL || 'https://api.ftl.dev';
+    const statusUrl = `${apiUrl}/deployments/${deploymentId}/status`;
+    const timeoutMs = timeoutSeconds * 1000;
+    const startTime = Date.now();
+    const pollInterval = 10000; // 10 seconds
+    while (Date.now() - startTime < timeoutMs) {
+        try {
+            const response = await fetch(statusUrl, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                }
+            });
+            if (!response.ok) {
+                throw new Error(`Status check failed: ${response.status} ${response.statusText}`);
+            }
+            const status = await response.json();
+            if (status.status === 'completed') {
+                return status;
+            }
+            if (status.status === 'failed') {
+                const errorMsg = status.error || 'Deployment failed';
+                throw new Error(`Deployment failed: ${errorMsg}`);
+            }
+            // Continue polling for in_progress or pending
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+        catch (error) {
+            if (error instanceof Error && error.message.includes('Deployment failed:')) {
+                throw error; // Re-throw deployment failure errors
+            }
+            // Continue polling on network errors
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+    }
+    throw new Error(`Deployment timed out after ${timeoutSeconds} seconds`);
+}
 async function run() {
     try {
-        core.startGroup('🚀 FTL Engineering Deploy (TypeScript Skeleton)');
-        const project = core.getInput('project', { required: true });
+        core.startGroup('🚀 FTL Engineering Deploy');
+        // Validate required inputs
+        const project = core.getInput('project');
+        if (!project) {
+            throw new Error('Project name is required');
+        }
         const environment = core.getInput('environment') || 'staging';
         const waitForCompletion = core.getBooleanInput('wait-for-completion');
+        const clientId = core.getInput('client-id');
+        const clientSecret = core.getInput('client-secret');
+        // Get deployment timeout with validation
+        const deploymentTimeoutInput = core.getInput('deployment-timeout');
+        let deploymentTimeout = 300; // Default 5 minutes
+        if (deploymentTimeoutInput) {
+            const parsed = parseInt(deploymentTimeoutInput, 10);
+            if (isNaN(parsed)) {
+                core.warning('Invalid deployment-timeout value, using default (300 seconds)');
+            }
+            else {
+                deploymentTimeout = parsed;
+            }
+        }
         core.info(`Project: ${project}`);
         core.info(`Environment: ${environment}`);
         core.info(`Wait for completion: ${waitForCompletion}`);
-        // CRAWL Phase: OAuth authentication stub
-        const clientId = core.getInput('client-id');
-        const clientSecret = core.getInput('client-secret');
-        if (clientId && clientSecret) {
-            core.info('Using provided OAuth credentials');
-            const authClient = new shared_1.FTLAuthClient();
-            const token = await authClient.authenticate({ clientId, clientSecret });
-            core.info(`✅ OAuth authentication successful (skeleton) - token length: ${token.accessToken.length}`);
+        // Get authentication token
+        const token = await getAuthToken(clientId, clientSecret);
+        // Prepare deployment options
+        const options = {};
+        const timeout = core.getInput('timeout');
+        const configFile = core.getInput('config-file');
+        if (timeout)
+            options.timeout = timeout;
+        if (configFile)
+            options['config-file'] = configFile;
+        // Execute deployment
+        core.info(`Deploying ${project} to ${environment}...`);
+        const deployment = await executeDeployment(project, environment, token, options);
+        // Set initial outputs
+        core.setOutput('deployment-id', deployment.deployment_id);
+        if (deployment.url) {
+            core.setOutput('deployment-url', deployment.url);
         }
-        else if (process.env.FTL_AUTH_TOKEN) {
-            core.info('Using cached OAuth token');
+        core.setOutput('status', deployment.status);
+        if (waitForCompletion) {
+            core.info('Waiting for deployment to complete...');
+            const finalStatus = await waitForDeploymentCompletion(deployment.deployment_id, token, deploymentTimeout);
+            core.setOutput('status', finalStatus.status);
+            if (finalStatus.url) {
+                core.setOutput('deployment-url', finalStatus.url);
+            }
         }
-        else {
-            throw new Error('Authentication required. Provide client-id/client-secret or use authenticate-ftl action first.');
-        }
-        // CRAWL Phase: Simulate deployment
-        const deploymentId = 'deploy-skeleton-12345';
-        const deploymentUrl = `https://ftl.dev/deployments/${deploymentId}`;
-        core.info(`Deploying ${project} to ${environment} (skeleton)...`);
-        // CRAWL Phase: Set skeleton outputs
-        core.setOutput('deployment-id', deploymentId);
-        core.setOutput('deployment-url', deploymentUrl);
-        core.setOutput('status', 'success');
-        core.info(`✅ Deployment successful (skeleton): ${deploymentUrl}`);
+        // Generate summary
+        const statusEmoji = '✅';
+        const statusText = deployment.status === 'completed' ? 'completed' : 'pending';
+        core.info(`${statusEmoji} Deployment ${statusText}${deployment.url ? `: ${deployment.url}` : ''}`);
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        core.setFailed(`Deployment failed: ${errorMessage}`);
+        core.setFailed(errorMessage);
     }
     finally {
         core.endGroup();
@@ -25940,6 +26503,14 @@ module.exports = require("events");
 
 "use strict";
 module.exports = require("fs");
+
+/***/ }),
+
+/***/ 1943:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("fs/promises");
 
 /***/ }),
 
