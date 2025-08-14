@@ -349,8 +349,6 @@ async function run(): Promise<void> {
       throw new Error(`FTL CLI verification failed: ${errorMessage}`)
     }
 
-
-
     // Set outputs
     core.setOutput('version', version)
     core.setOutput('ftl-path', ftlPath)

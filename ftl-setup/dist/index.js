@@ -30088,6 +30088,8 @@ async function run() {
         // Detect platform
         const platform = detectPlatform();
         coreExports.info(`Detected platform: ${platform.os}/${platform.arch} (${platform.runner})`);
+        // Install all required dependencies (Spin, wkg, Docker check)
+        await installDependencies();
         // Resolve version
         const version = await resolveVersion(versionInput);
         coreExports.info(`Resolved version: ${version}`);
@@ -30154,8 +30156,6 @@ async function run() {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`FTL CLI verification failed: ${errorMessage}`);
         }
-        // Install all required dependencies (Spin, wkg, Docker check)
-        await installDependencies();
         // Set outputs
         coreExports.setOutput('version', version);
         coreExports.setOutput('ftl-path', ftlPath);
