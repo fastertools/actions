@@ -256,6 +256,9 @@ async function run(): Promise<void> {
       `Detected platform: ${platform.os}/${platform.arch} (${platform.runner})`
     )
 
+    // Install all required dependencies (Spin, wkg, Docker check)
+    await installDependencies()
+
     // Resolve version
     const version = await resolveVersion(versionInput)
     core.info(`Resolved version: ${version}`)
@@ -346,8 +349,7 @@ async function run(): Promise<void> {
       throw new Error(`FTL CLI verification failed: ${errorMessage}`)
     }
 
-    // Install all required dependencies (Spin, wkg, Docker check)
-    await installDependencies()
+
 
     // Set outputs
     core.setOutput('version', version)
