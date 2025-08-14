@@ -1,12 +1,12 @@
 import { run } from '../index'
 import * as core from '@actions/core'
 import { spawn, ChildProcess } from 'child_process'
-import { waitForHealthCheck, killProcessGracefully } from '@fastertools/shared'
+import { waitForHealthCheck, killProcessGracefully } from '../shared/process.js'
 
 // Mock external dependencies
 jest.mock('@actions/core')
 jest.mock('child_process')
-jest.mock('@fastertools/shared')
+jest.mock('../shared/process.js')
 
 const mockedCore = core as jest.Mocked<typeof core>
 const mockedSpawn = spawn as jest.MockedFunction<typeof spawn>
@@ -49,7 +49,7 @@ describe('FTL Server Up Action', () => {
   })
 
   describe('Server Startup', () => {
-    test('starts FTL server with default configuration', async () => {
+    test('starts FTL upr with default configuration', async () => {
       mockedCore.getInput.mockImplementation((name: string) => {
         const inputs: Record<string, string> = {
           port: '8080',
@@ -62,7 +62,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '8080'],
+        ['up', '--port', '8080'],
         {
           detached: false,
           stdio: ['pipe', 'pipe', 'pipe']
@@ -75,7 +75,7 @@ describe('FTL Server Up Action', () => {
       )
     })
 
-    test('starts server with custom port and config file', async () => {
+    test('starts upr with custom port and config file', async () => {
       mockedCore.getInput.mockImplementation((name: string) => {
         const inputs: Record<string, string> = {
           port: '9000',
@@ -89,7 +89,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '9000', '--config', './custom-ftl.toml'],
+        ['up', '--port', '9000', '--config', './custom-ftl.toml'],
         expect.any(Object)
       )
 
@@ -112,7 +112,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '8080', '--verbose', '--log-level', 'debug'],
+        ['up', '--port', '8080', '--verbose', '--log-level', 'debug'],
         expect.any(Object)
       )
     })
@@ -130,7 +130,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '8080'],
+        ['up', '--port', '8080'],
         {
           detached: false,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -219,11 +219,11 @@ describe('FTL Server Up Action', () => {
       await promise
 
       expect(mockedCore.setFailed).toHaveBeenCalledWith(
-        'FTL server process exited unexpectedly with code 1'
+        'FTL upr process exited unexpectedly with code 1'
       )
     })
 
-    test('captures and logs server output', async () => {
+    test('captures and logs upr output', async () => {
       const outputProcess = {
         ...mockProcess,
         stdout: {
@@ -347,7 +347,7 @@ describe('FTL Server Up Action', () => {
         const inputs: Record<string, string> = {
           port: '8080',
           'health-method': 'POST',
-          'health-body': '{"ping": "server"}'
+          'health-body': '{"ping": "upr"}'
         }
         return inputs[name] || ''
       })
@@ -359,7 +359,7 @@ describe('FTL Server Up Action', () => {
         {
           timeoutSeconds: 30,
           method: 'POST',
-          body: '{"ping": "server"}'
+          body: '{"ping": "upr"}'
         }
       )
     })
@@ -425,7 +425,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '8080'], // Default port
+        ['up', '--port', '8080'], // Default port
         expect.any(Object)
       )
     })
@@ -445,7 +445,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '8080'],
+        ['up', '--port', '8080'],
         {
           detached: false,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -474,7 +474,7 @@ describe('FTL Server Up Action', () => {
 
       expect(mockedSpawn).toHaveBeenCalledWith(
         'ftl',
-        ['serve', '--port', '8080'],
+        ['up', '--port', '8080'],
         {
           detached: false,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -500,14 +500,14 @@ describe('FTL Server Up Action', () => {
       await run()
 
       expect(mockedCore.setOutput).toHaveBeenCalledWith(
-        'server-url',
+        'upr-url',
         'http://localhost:9090'
       )
       expect(mockedCore.setOutput).toHaveBeenCalledWith('pid', 12345)
       expect(mockedCore.setOutput).toHaveBeenCalledWith('status', 'running')
     })
 
-    test('generates server startup summary', async () => {
+    test('generates upr startup summary', async () => {
       mockedCore.getInput.mockImplementation((name: string) => {
         const inputs: Record<string, string> = { port: '8080' }
         return inputs[name] || ''
@@ -516,7 +516,7 @@ describe('FTL Server Up Action', () => {
       await run()
 
       expect(mockedCore.info).toHaveBeenCalledWith(
-        '✅ FTL server started successfully at http://localhost:8080'
+        '✅ FTL upr started successfully at http://localhost:8080'
       )
     })
 
@@ -571,7 +571,7 @@ describe('FTL Server Up Action', () => {
       cleanupFn()
 
       expect(mockedCore.info).toHaveBeenCalledWith(
-        '🧹 Cleaning up FTL server process...'
+        '🧹 Cleaning up FTL upr process...'
       )
     })
 

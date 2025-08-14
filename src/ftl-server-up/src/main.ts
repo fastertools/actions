@@ -1,9 +1,27 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
-import { spawn, ChildProcess } from 'child_process'
+import { ChildProcess } from 'child_process'
 import * as fs from 'fs/promises'
 import * as path from 'path'
-import { killProcessGracefully } from './shared/index.js'
+import { killProcessGracefully } from './shared/process.js'
+
+interface HealthCheckResponse {
+  status?: string
+  result?: {
+    tools?: unknown[]
+  }
+  error?: {
+    code?: number
+    message?: string
+  }
+  [key: string]: unknown
+}
+
+interface MockProcess {
+  pid: number
+  killed: boolean
+  kill: (signal?: NodeJS.Signals | number | string) => boolean
+}
 
 async function mcpHealthCheck(
   serverUrl: string,
@@ -37,7 +55,7 @@ async function mcpHealthCheck(
       return false
     }
 
-    const data = (await response.json()) as any
+    const data = (await response.json()) as HealthCheckResponse
     core.info(`MCP Response: ${JSON.stringify(data)}`)
 
     // Check for valid MCP response with tools
@@ -46,7 +64,7 @@ async function mcpHealthCheck(
       return true
     } else if (data.error) {
       const errorCode = data.error.code
-      const errorMessage = data.error.message || data.error
+      const errorMessage = data.error.message || ''
       core.info(`⚠️ MCP endpoint responded with error code: ${errorCode}`)
       core.info(`⚠️ Error message: ${errorMessage}`)
 
@@ -54,7 +72,8 @@ async function mcpHealthCheck(
       // Check for common configuration issues that indicate server is running but needs setup
       if (
         errorCode === -32603 ||
-        (errorMessage &&
+        (typeof errorMessage === 'string' &&
+          errorMessage &&
           (errorMessage.includes('tool_components') ||
             errorMessage.includes('no variable for') ||
             errorMessage.includes('Undefined') ||
@@ -176,12 +195,14 @@ function buildSpawnEnvironment(
 
 // Removed setupProcessEventHandlers as we're using a background process
 
-function setupProcessCleanupHandlers(ftlProcess: ChildProcess): void {
+function setupProcessCleanupHandlers(ftlProcess: MockProcess): void {
   const cleanup = async () => {
     if (ftlProcess && !ftlProcess.killed) {
       try {
         core.info('🧹 Cleaning up FTL server process...')
-        await killProcessGracefully(ftlProcess, { timeoutMs: 5000 })
+        await killProcessGracefully(ftlProcess as unknown as ChildProcess, {
+          timeoutMs: 5000
+        })
       } catch (error) {
         core.warning(`Failed to gracefully kill FTL server: ${error}`)
       }
@@ -272,13 +293,31 @@ echo $! > "${pidPath}"
       cwd: options.workingDirectory
     })
 
-    // Read the PID from the file
-    await new Promise((resolve) => setTimeout(resolve, 500)) // Give it a moment to write the PID
-    const pidContent = await fs.readFile(pidPath, 'utf-8')
-    const ftlPid = parseInt(pidContent.trim(), 10)
+    // Read the PID from the file with retry logic to handle race condition
+    let ftlPid: number | undefined
+    const maxRetries = 10
+    const retryDelay = 200 // ms
+
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const pidContent = await fs.readFile(pidPath, 'utf-8')
+        ftlPid = parseInt(pidContent.trim(), 10)
+        if (ftlPid && !isNaN(ftlPid)) {
+          break
+        }
+      } catch (error) {
+        // File might not exist yet
+        if (i === maxRetries - 1) {
+          throw new Error(
+            `Failed to read PID file after ${maxRetries} attempts: ${error}`
+          )
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelay))
+    }
 
     if (!ftlPid || isNaN(ftlPid)) {
-      throw new Error('Failed to get FTL server PID')
+      throw new Error('Failed to get valid FTL server PID from file')
     }
 
     // Create a mock process object for compatibility
@@ -287,13 +326,13 @@ echo $! > "${pidPath}"
       killed: false,
       kill: (signal?: string) => {
         try {
-          process.kill(ftlPid, (signal as any) || 'SIGTERM')
+          process.kill(ftlPid, signal || 'SIGTERM')
           return true
         } catch {
           return false
         }
       }
-    } as any
+    } as MockProcess
 
     // We don't need event handlers for the background process
     // Just setup cleanup handlers
@@ -345,7 +384,7 @@ echo $! > "${pidPath}"
 
       // Kill the process if health check fails
       try {
-        await killProcessGracefully(ftlProcess, {
+        await killProcessGracefully(ftlProcess as unknown as ChildProcess, {
           timeoutMs: 10000,
           forceful: true
         })

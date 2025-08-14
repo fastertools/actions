@@ -4,5 +4,7 @@
  */
 import { run } from './main.js'
 
+export { run }
+
 /* istanbul ignore next */
 run()

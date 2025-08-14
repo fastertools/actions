@@ -27326,13 +27326,14 @@ async function mcpHealthCheck(serverUrl, timeoutMs = 30000) {
         }
         else if (data.error) {
             const errorCode = data.error.code;
-            const errorMessage = data.error.message || data.error;
+            const errorMessage = data.error.message || '';
             coreExports.info(`⚠️ MCP endpoint responded with error code: ${errorCode}`);
             coreExports.info(`⚠️ Error message: ${errorMessage}`);
             // Error code -32603 is "Internal error" which often means configuration issues
             // Check for common configuration issues that indicate server is running but needs setup
             if (errorCode === -32603 ||
-                (errorMessage &&
+                (typeof errorMessage === 'string' &&
+                    errorMessage &&
                     (errorMessage.includes('tool_components') ||
                         errorMessage.includes('no variable for') ||
                         errorMessage.includes('Undefined') ||
@@ -27427,7 +27428,9 @@ function setupProcessCleanupHandlers(ftlProcess) {
         if (ftlProcess && !ftlProcess.killed) {
             try {
                 coreExports.info('🧹 Cleaning up FTL server process...');
-                await killProcessGracefully(ftlProcess, { timeoutMs: 5000 });
+                await killProcessGracefully(ftlProcess, {
+                    timeoutMs: 5000
+                });
             }
             catch (error) {
                 coreExports.warning(`Failed to gracefully kill FTL server: ${error}`);
@@ -27504,12 +27507,28 @@ echo $! > "${pidPath}"
             env: spawnEnv,
             cwd: options.workingDirectory
         });
-        // Read the PID from the file
-        await new Promise((resolve) => setTimeout(resolve, 500)); // Give it a moment to write the PID
-        const pidContent = await fs.readFile(pidPath, 'utf-8');
-        const ftlPid = parseInt(pidContent.trim(), 10);
+        // Read the PID from the file with retry logic to handle race condition
+        let ftlPid;
+        const maxRetries = 10;
+        const retryDelay = 200; // ms
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                const pidContent = await fs.readFile(pidPath, 'utf-8');
+                ftlPid = parseInt(pidContent.trim(), 10);
+                if (ftlPid && !isNaN(ftlPid)) {
+                    break;
+                }
+            }
+            catch (error) {
+                // File might not exist yet
+                if (i === maxRetries - 1) {
+                    throw new Error(`Failed to read PID file after ${maxRetries} attempts: ${error}`);
+                }
+            }
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        }
         if (!ftlPid || isNaN(ftlPid)) {
-            throw new Error('Failed to get FTL server PID');
+            throw new Error('Failed to get valid FTL server PID from file');
         }
         // Create a mock process object for compatibility
         const ftlProcess = {
@@ -27598,4 +27617,6 @@ echo $! > "${pidPath}"
  */
 /* istanbul ignore next */
 run();
+
+export { run };
 //# sourceMappingURL=index.js.map

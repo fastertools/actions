@@ -1,6 +1,5 @@
 import { downloadWithRetry, checkUrlExists, DownloadOptions } from '../network'
 import * as fs from 'fs/promises'
-import * as path from 'path'
 
 // Mock external dependencies
 jest.mock('fs/promises')
